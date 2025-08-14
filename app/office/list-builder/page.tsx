@@ -141,48 +141,51 @@ export default function ListBuilder() {
         </select>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-2xl bg-white/80 shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-zinc-500">
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Phone</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">List</th>
-              <th className="px-4 py-3 w-24">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(r => (
-              <tr key={r.id} className="border-t border-zinc-100">
-                <td className="px-4 py-3">{[r.first_name, r.last_name].filter(Boolean).join(' ')}</td>
-                <td className="px-4 py-3">
-                  {r.phone ? <a className="text-sky-700 underline" href={`tel:${r.phone}`}>{r.phone}</a> : '—'}
-                </td>
-                <td className="px-4 py-3">
-                  {r.email ? <a className="text-sky-700 underline" href={`mailto:${r.email}`}>{r.email}</a> : '—'}
-                </td>
-                <td className="px-4 py-3">{r.list ?? '—'}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button onClick={()=>setEditing(r)} className="p-2 rounded-lg bg-white hover:bg-zinc-50 border border-zinc-200">
-                      <Pencil size={16}/>
-                    </button>
-                    <button onClick={()=>remove(r.id)} className="p-2 rounded-lg bg-red-100 hover:bg-red-200 text-red-700">
-                      <Trash2 size={16}/>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-500">No prospects yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      // Replace your existing filter UI with this block:
 
-      {/* Your existing Add/Edit modal can stay; key TS fix is to coerce nulls to '' in <select> values */}
-    </div>
-  );
-}
+      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/50 p-3 sm:p-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Filter by field</span>
+            <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" value={filter.field} onChange={(e) => setFilter({ ...filter, field: e.target.value as any })}>
+              <option value="list">List</option>
+              <option value="relationship_status">Relationship status</option>
+              <option value="looking">Looking</option>  
+              <option value="last_step">Last step</option>
+              <option value="next_step">Next step</option>
+              <option value="location">Location</option>
+              <option value="age">Age</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Value</span>
+            {/* If the selected field has known options, render a select; otherwise an input */}
+            {['list','relationship_status','looking','last_step','next_step'].includes(filter.field) ? ( <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" value={filter.value} onChange={(e) => setFilter({ ...filter, value: e.target.value })}>
+                {/* TODO: fill with your exact option arrays you already use */}
+                {(filter.field === 'list' ? LIST_OPTIONS
+                 : filter.field === 'relationship_status' ? REL_OPTIONS
+                 : filter.field === 'looking' ? LOOK_OPTIONS
+                 : filter.field === 'last_step' ? STEP_OPTIONS
+                 : NEXT_STEP_OPTIONS).map(o => <option key={o} value={o}>{o.replace(/_/g,' ')}</option>)}
+              </select> ) : 
+              (<input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" placeholder="Type a value…" value={filter.value} onChange={(e) => setFilter({ ...filter, value: e.target.value })} /> )}
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Search</span>
+            <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" placeholder="Name, phone, email…" value={search} onChange={(e) => setSearch(e.target.value)}/>
+          </label>
+          <div className="flex items-end gap-2">
+            <button onClick={applyFilters} className="w-full rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700">
+              Apply
+            </button>
+            <button onClick={clearFilters} className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2">
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+            {/* Your existing Add/Edit modal can stay; key TS fix is to coerce nulls to '' in <select> values */}
+          </div>
+        );
+      }
