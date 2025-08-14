@@ -1,102 +1,118 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { Page, Card } from '@/components/ui';
 import { supabaseBrowser } from '@/lib/supabase-browser';
+import { Share2, Download, Upload } from 'lucide-react';
 
-type Item = { name: string; url?: string; isAudio?: boolean; isVideo?: boolean; isPDF?: boolean };
+type LibraryItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  url: string; // direct link to file
+  type: 'audio' | 'video' | 'pdf' | 'doc';
+  created_at: string;
+};
 
-export default function LibraryHome() {
+export default function LibraryPage() {
   const supa = supabaseBrowser();
   const [uid, setUid] = useState<string | null>(null);
-  const [files, setFiles] = useState<Item[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [items, setItems] = useState<LibraryItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
-      setUid(session?.user?.id ?? null);
-      await refresh();
+      const id = session?.user?.id ?? null;
+      setUid(id);
+      if (!id) return;
+
+      // Pull from your `library_items` table in Supabase
+      const { data, error } = await supa
+        .from('library_items')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error) setItems((data ?? []) as LibraryItem[]);
+      setLoading(false);
     })();
   }, []);
 
-  const refresh = async () => {
-    const { data, error } = await supa.storage.from('library').list('', {
-      limit: 1000, sortBy: { column: 'created_at', order: 'desc' }
-    });
-    if (error) { alert(error.message); return; }
-    const base = (data ?? []).map(x => {
-      const lower = x.name.toLowerCase();
-      const isAudio = /\.(mp3|m4a|wav|ogg)$/.test(lower);
-      const isVideo = /\.(mp4|webm|mov)$/.test(lower);
-      const isPDF   = /\.pdf$/.test(lower);
-      return { name: x.name, isAudio, isVideo, isPDF } as Item;
-    });
-
-    // PRIVATE bucket: sign each file (1 hour)
-    const withUrls = await Promise.all(base.map(async f => {
-      const { data, error } = await supa.storage.from('library').createSignedUrl(f.name, 3600);
-      return { ...f, url: error ? undefined : data?.signedUrl };
-    }));
-
-    setFiles(withUrls);
-  };
-
-  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length) return;
-    setUploading(true);
-    for (const file of Array.from(e.target.files)) {
-      const path = `${Date.now()}_${file.name}`;
-      const { error } = await supa.storage.from('library').upload(path, file, { upsert: false });
-      if (error) alert(error.message);
+  const shareItem = async (item: LibraryItem) => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: item.title,
+          text: item.description ?? '',
+          url: item.url
+        });
+      } catch (err) {
+        console.error('Share cancelled or failed', err);
+      }
+    } else {
+      await navigator.clipboard.writeText(item.url);
+      alert('Link copied to clipboard');
     }
-    setUploading(false);
-    await refresh();
   };
-
-  if (!uid) {
-    return (
-      <Page>
-        <Card>Please sign in to access the Library.</Card>
-      </Page>
-    );
-  }
 
   return (
     <Page>
-      <h1>Library</h1>
-
-      <Card className="mt-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <input type="file" multiple onChange={onUpload} className="block" />
-          <button onClick={refresh} className="btn bg-zinc-100 dark:bg-zinc-800">
-            {uploading ? 'Uploading…' : 'Refresh'}
-          </button>
+      <div className="w-full">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1>Library</h1>
+          {uid && (
+            <button
+              className="btn btn-sky inline-flex items-center gap-2"
+              onClick={() => alert('Upload modal here')}
+            >
+              <Upload className="w-4 h-4" /> Upload
+            </button>
+          )}
         </div>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-          Private bucket enabled — links are signed and expire in 1 hour.
-        </p>
-      </Card>
 
-      <div className="mt-4 grid gap-4">
-        {files.map(f => (
-          <Card key={f.name} className="overflow-hidden">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium">{f.name}</div>
-                {f.url && <a href={f.url} target="_blank" className="text-sm text-sky-700">Open</a>}
-              </div>
-            </div>
+        {loading && <Card className="mt-4">Loading library…</Card>}
 
-            {f.isAudio && f.url && <audio controls src={f.url} className="mt-3 w-full" />}
-            {f.isVideo && f.url && <video controls src={f.url} className="mt-3 w-full rounded-xl" />}
-            {f.isPDF && f.url && (
-              <div className="mt-3">
-                <iframe src={f.url} className="w-full h-96 rounded-xl" />
+        {!loading && items.length === 0 && (
+          <Card className="mt-4">No library items yet.</Card>
+        )}
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((item) => (
+            <Card key={item.id} className="flex flex-col">
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold">{item.title}</h3>
+                {item.description && (
+                  <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300 line-clamp-3">
+                    {item.description}
+                  </p>
+                )}
               </div>
-            )}
-          </Card>
-        ))}
-        {files.length === 0 && <Card>No files yet. Upload above.</Card>}
+
+              <div className="mt-3 flex items-center justify-between">
+                <div className="flex gap-2">
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-icon btn-ghost"
+                    title="Download / View"
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
+                  <button
+                    className="btn-icon btn-ghost"
+                    onClick={() => shareItem(item)}
+                    title="Share"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {new Date(item.created_at).toLocaleDateString()}
+                </span>
+              </div>
+            </Card>
+          ))}
+        </div>
       </div>
     </Page>
   );
