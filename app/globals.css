@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light dark;
+/* Better text rendering and rhythm */
+:root { color-scheme: light dark; }
+
+html, body { height: 100%; }
+
+@layer base {
+  h1 { @apply text-3xl md:text-4xl font-semibold tracking-tight; }
+  h2 { @apply text-2xl md:text-3xl font-semibold tracking-tight; }
+  h3 { @apply text-xl font-semibold; }
+  p  { @apply leading-relaxed; }
+}
+
+/* Card polish */
+.card {
+  @apply rounded-3xl border border-zinc-100/60 bg-white/80 backdrop-blur p-6 shadow-sm;
+}
+
+/* Button polish */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-semibold shadow-sm hover:shadow-md active:translate-y-[1px] transition;
 }
