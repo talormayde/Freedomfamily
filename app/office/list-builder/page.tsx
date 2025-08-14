@@ -439,7 +439,7 @@ export default function ListBuilderPage() {
 
       {/* Table */}
       <Card className="mt-4 overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="table">
           <thead className="text-left text-zinc-500 dark:text-zinc-400">
             <tr className="[&>th]:py-2 [&>th]:px-2">
               <th>Name</th>
