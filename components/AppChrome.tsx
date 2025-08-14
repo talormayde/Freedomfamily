@@ -12,19 +12,16 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
 
+      // subscribe + cleanup
       const { data: sub } = supa.auth.onAuthStateChange((_e, sess) => {
         if (mounted) setAuthed(!!sess);
       });
-
-      // proper cleanup from useEffect (not inside the IIFE’s return)
       return () => {
-        mounted = false;
-        sub.subscription.unsubscribe();
+        sub.subscription?.unsubscribe();
       };
     })();
 
@@ -33,9 +30,9 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    // `isolate` creates a new stacking context so our z-indices are predictable
+    // New stacking context so z-index is deterministic across the app
     <div className="min-h-screen isolate relative">
-      {/* Decorative site background moved to its own non-interactive layer */}
+      {/* Decorative background — MUST NOT steal clicks */}
       <div
         className="pointer-events-none absolute inset-0 -z-10"
         aria-hidden="true"
@@ -43,7 +40,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
         <div className="h-full w-full bg-gradient-to-b from-sky-50 to-teal-50 dark:from-zinc-950 dark:to-zinc-900" />
       </div>
 
-      {/* Top bar (only when authed). Give it a high z-index so it can never be covered. */}
+      {/* Top bar (only when authed) */}
       {authed && (
         <header className="sticky top-0 z-[200] backdrop-blur bg-white/70 dark:bg-zinc-900/60 border-b border-black/5 dark:border-white/10">
           <div className="mx-auto px-4 sm:px-6 lg:px-8 max-w-[1700px] h-14 flex items-center justify-between text-zinc-900 dark:text-zinc-100">
@@ -61,7 +58,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="mx-auto max-w-[1700px]">
-        {/* The whole app shell gets a very high z-index and explicit pointer-events */}
+        {/* App shell — ensure it’s above background & accepts clicks */}
         <div className={`relative z-[150] pointer-events-auto grid ${authed ? 'md:grid-cols-[220px_1fr]' : 'grid-cols-1'} gap-0 text-zinc-900 dark:text-zinc-100`}>
           {/* Sidebar (only when authed) */}
           {authed && (
@@ -84,12 +81,12 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
                 </Link>
                 <Link href="/kitchen" className="block rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow-sm px-4 py-3 hover:bg-white">
                   <span className="inline-flex items-center gap-2">
-                    <span>🔎</span> <span>Kitchen</span>
+                    <span>🧰</span> <span>Kitchen</span>
                   </span>
                 </Link>
                 <Link href="/calendar" className="block rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow-sm px-4 py-3 hover:bg-white">
                   <span className="inline-flex items-center gap-2">
-                    <span>📆</span> <span>Calendar</span>
+                    <span>🗓️</span> <span>Calendar</span>
                   </span>
                 </Link>
               </div>
