@@ -24,6 +24,9 @@ function fmtOrdinal(n: number) {
 function fmtLong(d: Date) {
   return `${d.toLocaleString('en-US', { month: 'long' })} ${fmtOrdinal(d.getDate())}, ${d.getFullYear()}`;
 }
+function fmtLongShort(d: Date) {
+  return `${d.toLocaleString('en-US', { month: 'short' })} ${d.getDate()}`;
+}
 function toLocalInputValue(d: Date | null) {
   if (!d) return '';
   const pad = (x: number) => String(x).padStart(2, '0');
@@ -34,6 +37,7 @@ function fromLocalInputValue(v: string): Date | null {
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
 }
+
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999); }
 function startOfWeek(d: Date) {
@@ -43,8 +47,20 @@ function startOfWeek(d: Date) {
   c.setHours(0,0,0,0);
   return c;
 }
+function endOfWeek(d: Date) {
+  const s = startOfWeek(d);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  e.setHours(23,59,59,999);
+  return e;
+}
 function addMonths(d: Date, m: number) {
   return new Date(d.getFullYear(), d.getMonth() + m, Math.min(d.getDate(), 28));
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
 }
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -73,12 +89,16 @@ type Prospect = {
   notes: string | null;
 };
 
-type ViewMode = 'month' | 'list';
+type ViewMode = 'month' | 'week' | 'list';
 
 export default function CalendarPage() {
   const supa = supabaseBrowser();
   const [view, setView] = useState<ViewMode>('month');
+
+  // Month & Week cursors
   const [cursorMonth, setCursorMonth] = useState<Date>(startOfMonth(new Date()));
+  const [cursorWeekStart, setCursorWeekStart] = useState<Date>(startOfWeek(new Date()));
+
   const [includeCRM, setIncludeCRM] = useState<boolean>(true);
 
   const [events, setEvents] = useState<HubEvent[]>([]);
@@ -105,33 +125,37 @@ export default function CalendarPage() {
     crm_email: ''
   });
 
+  // ----- Ranges for views -----
   const monthRange = useMemo(() => {
     const start = startOfWeek(startOfMonth(cursorMonth));
     const end = endOfMonth(cursorMonth);
-    // extend to full weeks (6 rows)
+    // extend to full 6 weeks
     const days: Date[] = [];
     const d = new Date(start);
-    while (days.length < 42) {
-      days.push(new Date(d));
-      d.setDate(d.getDate() + 1);
-    }
+    while (days.length < 42) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
     return { start, end, days };
   }, [cursorMonth]);
 
+  const weekRange = useMemo(() => {
+    const days = Array.from({ length: 7 }, (_, i) => addDays(cursorWeekStart, i));
+    return { start: cursorWeekStart, end: endOfWeek(cursorWeekStart), days };
+  }, [cursorWeekStart]);
+
+  // ----- Load events (month or week window) -----
   async function loadData() {
     setLoading(true);
     setError(null);
     try {
-      // --- 1) events table for current month window (+1 week pad)
-      const start = new Date(monthRange.start);
-      const end = new Date(monthRange.end);
-      end.setDate(end.getDate() + 7);
+      const range = view === 'week'
+        ? { start: weekRange.start, end: weekRange.end }
+        : { start: monthRange.start, end: addDays(endOfMonth(cursorMonth), 7) };
 
+      // 1) DB events in range
       const { data: ev, error: evErr } = await supa
         .from('events')
         .select('*')
-        .gte('start', start.toISOString())
-        .lte('start', end.toISOString())
+        .gte('start', range.start.toISOString())
+        .lte('start', range.end.toISOString())
         .order('start', { ascending: true });
 
       if (evErr) throw evErr;
@@ -142,15 +166,16 @@ export default function CalendarPage() {
         _prospect: null
       }));
 
-      // --- 2) add CRM due items as pseudo-events if toggled
+      // 2) CRM due items as pseudo-events if toggled
       if (includeCRM) {
-        const mStart = startOfMonth(cursorMonth);
-        const mEnd = endOfMonth(cursorMonth);
+        const crmStart = view === 'week' ? weekRange.start : startOfMonth(cursorMonth);
+        const crmEnd   = view === 'week' ? weekRange.end   : endOfMonth(cursorMonth);
+
         const { data: prs, error: pErr } = await supa
           .from('prospects')
           .select('id,first_name,last_name,phone,email,next_due_date,notes')
-          .gte('next_due_date', mStart.toISOString().slice(0,10))
-          .lte('next_due_date', mEnd.toISOString().slice(0,10));
+          .gte('next_due_date', crmStart.toISOString().slice(0,10))
+          .lte('next_due_date', crmEnd.toISOString().slice(0,10));
 
         if (pErr) throw pErr;
         const crmEvents: HubEvent[] = (prs || []).filter(p => p.next_due_date).map(p => {
@@ -184,17 +209,18 @@ export default function CalendarPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cursorMonth, includeCRM]);
+  }, [cursorMonth, cursorWeekStart, includeCRM, view]);
 
   // ---------- CRUD ----------
   function openCreate() {
     setEditing(null);
+    const base = view === 'week' ? new Date(weekRange.start) : new Date();
     setForm({
       title: '',
       location: '',
       description: '',
-      start: toLocalInputValue(new Date()) || '',
-      end: toLocalInputValue(new Date(new Date().getTime() + 60 * 60 * 1000)) || '',
+      start: toLocalInputValue(base) || '',
+      end: toLocalInputValue(new Date(base.getTime() + 60 * 60 * 1000)) || '',
       crm_email: ''
     });
     setModalOpen(true);
@@ -226,7 +252,6 @@ export default function CalendarPage() {
       return;
     }
 
-    // Optionally resolve crm_prospect_id by email
     if (form.crm_email) {
       const { data: p } = await supa
         .from('prospects')
@@ -236,7 +261,7 @@ export default function CalendarPage() {
       if (p?.id) payload.crm_prospect_id = p.id;
     }
 
-    if (editing) {
+    if (editing && editing._source !== 'crm') {
       const { error } = await supa.from('events').update(payload).eq('id', editing.id);
       if (error) return alert(error.message);
     } else {
@@ -256,8 +281,7 @@ export default function CalendarPage() {
 
   // ---------- CSV Import ----------
   function parseCSV(text: string) {
-    // Very small, simple CSV parser (no quotes/escapes). Columns:
-    // title,location,description,startISO,endISO,crm_email
+    // Columns: title,location,description,startISO,endISO,crm_email
     return text
       .split(/\r?\n/)
       .map(l => l.trim())
@@ -279,13 +303,12 @@ export default function CalendarPage() {
         end: r.end ? toLocalInputValue(new Date(r.end)) : '',
         crm_email: r.crm_email || ''
       });
-      // Save immediately; this keeps it simple for now
       await saveForm();
     }
   }
 
   // ---------- Rendering helpers ----------
-  const eventsByDay = useMemo(() => {
+  const monthEventsByDay = useMemo(() => {
     const map = new Map<string, HubEvent[]>();
     monthRange.days.forEach(d => map.set(d.toDateString(), []));
     events.forEach(ev => {
@@ -295,6 +318,33 @@ export default function CalendarPage() {
     });
     return map;
   }, [events, monthRange.days]);
+
+  const weekEventsByDay = useMemo(() => {
+    const map = new Map<string, HubEvent[]>();
+    weekRange.days.forEach(d => map.set(d.toDateString(), []));
+    events.forEach(ev => {
+      const dKey = new Date(ev.start).toDateString();
+      if (!map.has(dKey)) return;
+      map.get(dKey)!.push(ev);
+    });
+    // sort each day by start time
+    for (const [k, arr] of map.entries()) {
+      arr.sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      map.set(k, arr);
+    }
+    return map;
+  }, [events, weekRange.days]);
+
+  // For list view grouping
+  const listGroups = useMemo(() => {
+    return [...events.reduce((map, ev) => {
+      const k = new Date(ev.start).toDateString();
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(ev);
+      return map;
+    }, new Map<string, HubEvent[]>()).entries()]
+      .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime());
+  }, [events]);
 
   return (
     <div className="w-full">
@@ -312,6 +362,12 @@ export default function CalendarPage() {
                 className={`px-3 py-1.5 rounded-lg text-sm ${view === 'month' ? 'bg-sky-600 text-white' : 'text-zinc-700 dark:text-zinc-200'}`}
               >
                 Month
+              </button>
+              <button
+                onClick={() => setView('week')}
+                className={`px-3 py-1.5 rounded-lg text-sm ${view === 'week' ? 'bg-sky-600 text-white' : 'text-zinc-700 dark:text-zinc-200'}`}
+              >
+                Week
               </button>
               <button
                 onClick={() => setView('list')}
@@ -355,21 +411,31 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Month controls */}
+        {/* Controls bar */}
         <div className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white/70 px-3 py-2 dark:border-zinc-700">
           <div className="flex items-center gap-2">
             <button
               className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              onClick={() => setCursorMonth(addMonths(cursorMonth, -1))}
+              onClick={() =>
+                view === 'week'
+                  ? setCursorWeekStart(addDays(cursorWeekStart, -7))
+                  : setCursorMonth(addMonths(cursorMonth, -1))
+              }
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
             <div className="text-lg font-medium">
-              {cursorMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+              {view === 'week'
+                ? `${fmtLong(weekRange.start)} – ${fmtLong(weekRange.end)}`
+                : cursorMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
             </div>
             <button
               className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              onClick={() => setCursorMonth(addMonths(cursorMonth, 1))}
+              onClick={() =>
+                view === 'week'
+                  ? setCursorWeekStart(addDays(cursorWeekStart, 7))
+                  : setCursorMonth(addMonths(cursorMonth, 1))
+              }
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -381,14 +447,14 @@ export default function CalendarPage() {
 
       {/* Views */}
       <div className="mx-auto mt-4 w-full max-w-screen-2xl px-2 sm:px-4">
-        {view === 'month' ? (
+        {view === 'month' && (
           <div className="grid grid-cols-7 gap-2 sm:gap-3">
             {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
               <div key={d} className="text-xs sm:text-sm font-medium text-zinc-500 px-2">{d}</div>
             ))}
             {monthRange.days.map((d, i) => {
               const inMonth = d.getMonth() === cursorMonth.getMonth();
-              const dayEvents = eventsByDay.get(d.toDateString()) || [];
+              const dayEvents = monthEventsByDay.get(d.toDateString()) || [];
               return (
                 <div
                   key={i}
@@ -423,83 +489,84 @@ export default function CalendarPage() {
               );
             })}
           </div>
-        ) : (
-          // List view
+        )}
+
+        {view === 'week' && (
+          <div className="grid grid-cols-8 gap-2 sm:gap-3">
+            {/* Time column */}
+            <div />
+            {weekRange.days.map(d => (
+              <div key={d.toDateString()} className="text-center text-xs sm:text-sm font-medium text-zinc-500">
+                {d.toLocaleDateString('en-US', { weekday: 'short' })} • {fmtLongShort(d)}
+              </div>
+            ))}
+
+            {/* 08:00–20:00 rows (feel free to expand to 0–24 later) */}
+            {Array.from({ length: 13 }, (_, i) => 8 + i).map(hr => (
+              <FragmentRow key={hr} hour={hr} days={weekRange.days} eventsByDay={weekEventsByDay} onEdit={openEdit} onDelete={deleteEvent} />
+            ))}
+          </div>
+        )}
+
+        {view === 'list' && (
           <div className="space-y-4">
-            {/* Group by day */}
-            {[...events.reduce((map, ev) => {
-              const k = new Date(ev.start).toDateString();
-              if (!map.has(k)) map.set(k, []);
-              map.get(k)!.push(ev);
-              return map;
-            }, new Map<string, HubEvent[]>()).entries()]
-              .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-              .map(([k, evs]) => {
-                const day = new Date(k);
-                return (
-                  <div key={k} className="rounded-2xl border border-zinc-200 bg-white/80 p-4 dark:border-zinc-700">
-                    <div className="text-sm sm:text-base font-semibold mb-2">{fmtLong(day)}</div>
-                    <div className="space-y-3">
-                      {evs.map(ev => (
-                        <div key={ev.id} className="rounded-xl border border-zinc-200 bg-white/90 px-3 py-3 flex items-start justify-between gap-3 dark:border-zinc-700">
-                          <div className="min-w-0">
-                            <div className="font-medium">
-                              {ev.title}{' '}
-                              {ev._source === 'crm' && (
-                                <span className="ml-2 inline-block rounded-full bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 align-middle">CRM</span>
-                              )}
-                            </div>
-                            <div className="text-xs sm:text-sm text-zinc-600">
-                              {new Date(ev.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                              {ev.end ? ` – ${new Date(ev.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
-                              {ev.location ? ` • ${ev.location}` : ''}
-                            </div>
-                            {ev.description && (
-                              <div className="mt-1 text-xs sm:text-sm text-zinc-700">{ev.description}</div>
+            {listGroups.map(([k, evs]) => {
+              const day = new Date(k);
+              return (
+                <div key={k} className="rounded-2xl border border-zinc-200 bg-white/80 p-4 dark:border-zinc-700">
+                  <div className="text-sm sm:text-base font-semibold mb-2">{fmtLong(day)}</div>
+                  <div className="space-y-3">
+                    {evs.map(ev => (
+                      <div key={ev.id} className="rounded-xl border border-zinc-200 bg-white/90 px-3 py-3 flex items-start justify-between gap-3 dark:border-zinc-700">
+                        <div className="min-w-0">
+                          <div className="font-medium">
+                            {ev.title}{' '}
+                            {ev._source === 'crm' && (
+                              <span className="ml-2 inline-block rounded-full bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 align-middle">CRM</span>
                             )}
-                            {/* Prospect quick actions */}
-                            {!!ev._prospect && (
-                              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs sm:text-sm">
-                                {ev._prospect.phone && (
-                                  <a href={`tel:${ev._prospect.phone}`} className="inline-flex items-center gap-1 text-sky-700 hover:underline">
-                                    <Phone className="h-4 w-4" /> {ev._prospect.phone}
-                                  </a>
-                                )}
-                                {ev._prospect.email && (
-                                  <a href={`mailto:${ev._prospect.email}`} className="inline-flex items-center gap-1 text-sky-700 hover:underline">
-                                    <Mail className="h-4 w-4" /> {ev._prospect.email}
-                                  </a>
-                                )}
-                                <a href={`/office/list-builder?prospect=${ev._prospect.id}`} className="inline-flex items-center gap-1 text-sky-700 hover:underline">
-                                  <LinkIcon className="h-4 w-4" /> View prospect
+                          </div>
+                          <div className="text-xs sm:text-sm text-zinc-600">
+                            {new Date(ev.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            {ev.end ? ` – ${new Date(ev.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
+                            {ev.location ? ` • ${ev.location}` : ''}
+                          </div>
+                          {ev.description && (
+                            <div className="mt-1 text-xs sm:text-sm text-zinc-700">{ev.description}</div>
+                          )}
+                          {!!ev._prospect && (
+                            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs sm:text-sm">
+                              {ev._prospect.phone && (
+                                <a href={`tel:${ev._prospect.phone}`} className="inline-flex items-center gap-1 text-sky-700 hover:underline">
+                                  <Phone className="h-4 w-4" /> {ev._prospect.phone}
                                 </a>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => openEdit(ev)}
-                              className="p-2 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-50"
-                              title="Edit"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            {ev._source !== 'crm' && (
-                              <button
-                                onClick={() => deleteEvent(ev)}
-                                className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 hover:bg-red-100"
-                                title="Delete"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
+                              )}
+                              {ev._prospect.email && (
+                                <a href={`mailto:${ev._prospect.email}`} className="inline-flex items-center gap-1 text-sky-700 hover:underline">
+                                  <Mail className="h-4 w-4" /> {ev._prospect.email}
+                                </a>
+                              )}
+                              <a href={`/office/list-builder?prospect=${ev._prospect.id}`} className="inline-flex items-center gap-1 text-sky-700 hover:underline">
+                                <LinkIcon className="h-4 w-4" /> View prospect
+                              </a>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                    </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button onClick={() => openEdit(ev)} className="p-2 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-50" title="Edit">
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          {ev._source !== 'crm' && (
+                            <button onClick={() => deleteEvent(ev)} className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 hover:bg-red-100" title="Delete">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -518,7 +585,7 @@ export default function CalendarPage() {
 
             {editing?._source === 'crm' && (
               <div className="mb-3 text-xs sm:text-sm rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2">
-                This is a CRM follow-up item. You can edit text, time, and attach it as a real calendar entry if you want to **Save**; deleting CRM items happens in the List Builder.
+                This is a CRM follow-up item. You can edit text, time, and attach it as a real calendar entry if you **Save**; deleting CRM items happens in the List Builder.
               </div>
             )}
 
@@ -561,5 +628,65 @@ export default function CalendarPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------- Week row fragment (hour + 7 day cells) ----------
+function FragmentRow({
+  hour,
+  days,
+  eventsByDay,
+  onEdit,
+  onDelete,
+}: {
+  hour: number;
+  days: Date[];
+  eventsByDay: Map<string, HubEvent[]>;
+  onEdit: (ev: HubEvent) => void;
+  onDelete: (ev: HubEvent) => void;
+}) {
+  return (
+    <>
+      {/* Time label */}
+      <div className="text-right pr-2 text-xs sm:text-sm text-zinc-400">{`${hour}:00`}</div>
+      {days.map(d => {
+        const list = (eventsByDay.get(d.toDateString()) || []).filter(ev => {
+          const s = new Date(ev.start);
+          return s.getHours() === hour; // simple row bucketing (top-of-hour)
+        });
+        return (
+          <div key={`${d.toDateString()}-${hour}`} className="min-h-[64px] rounded-xl border border-zinc-200 bg-white/60 px-2 py-1 dark:border-zinc-700">
+            <div className="space-y-1">
+              {list.map(ev => (
+                <div key={ev.id} className={`rounded-lg border px-2 py-1 text-xs sm:text-sm flex items-start justify-between gap-2 ${
+                  ev._source === 'crm'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                }`}>
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{ev.title}</div>
+                    <div className="truncate opacity-80">
+                      {new Date(ev.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      {ev.end ? ` – ${new Date(ev.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
+                      {ev.location ? ` • ${ev.location}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => onEdit(ev)} className="p-1 rounded-md bg-white border border-zinc-200 hover:bg-zinc-50" title="Edit">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    {ev._source !== 'crm' && (
+                      <button onClick={() => onDelete(ev)} className="p-1 rounded-md bg-red-50 border border-red-200 text-red-700 hover:bg-red-100" title="Delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }
