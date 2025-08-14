@@ -71,3 +71,12 @@ html, body { height: 100%; }
 .dark .btn-ghost { background:rgb(39 39 42); }
 .btn-danger { background:rgb(239 68 68); color:white; }
 .btn-sky { background:rgb(2 132 199); color:white; }
+
+/* Buttons & form helpers used above */
+.btn { @apply rounded-xl px-4 py-2 font-medium; }
+.btn-sky { @apply bg-sky-600 text-white hover:bg-sky-700; }
+.btn-icon { @apply rounded-xl p-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700; }
+.btn-danger { @apply bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300; }
+.form-field { @apply space-y-1; }
+.form-label { @apply text-xs font-semibold uppercase tracking-wide opacity-70; }
+.form-input { @apply w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2; }
