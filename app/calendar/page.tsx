@@ -1,448 +1,205 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Page, Card } from '@/components/ui';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { Pencil, Trash2, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 
 type EventRow = {
   id: string;
-  owner: string | null;
   title: string;
-  description: string | null;
   location: string | null;
-  starts_at: string; // ISO
-  ends_at: string | null; // ISO
-  created_at: string;
+  notes: string | null;
+  start_at: string; // ISO
+  end_at: string | null; // ISO
+  kind: 'crm'|'custom'|null; // optional tag
+  prospect_id: string | null;
 };
 
-type Prospect = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  phone: string | null;
-  email: string | null;
-  next_step: string | null;
-  due_date: string | null; // yyyy-mm-dd
-};
-
-const isoFromDateTime = (date: string, time: string) => new Date(`${date}T${time || '00:00'}:00`).toISOString();
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-const fmtHuman = (yyyy_mm_dd: string) =>
-  new Date(yyyy_mm_dd + 'T00:00:00').toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
-const today = () => new Date().toISOString().slice(0, 10);
+function fmtDate(d: string) {
+  const dt = new Date(d);
+  return dt.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+}
+function fmtTime(d?: string | null) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
 
 export default function CalendarPage() {
   const supa = supabaseBrowser();
+  const [rows, setRows] = useState<EventRow[]>([]);
+  const [view, setView] = useState<'month'|'week'|'day'|'list'>('list');
+  const [open, setOpen] = useState<EventRow | null>(null);
 
-  const [uid, setUid] = useState<string | null>(null);
-  const [events, setEvents] = useState<EventRow[]>([]);
-  const [prospects, setProspects] = useState<Prospect[]>([]);
-  const [view, setView] = useState<'day' | 'week' | 'month'>('month');
-  const [anchor, setAnchor] = useState<Date>(new Date()); // which day/week/month we’re viewing
-  const [includeCRM, setIncludeCRM] = useState(true);
-
-  // modals
-  const emptyForm = { id: null as string | null, title: '', description: '', location: '', startDate: today(), startTime: '09:00', endDate: today(), endTime: '10:00' };
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-
-  const [showCRM, setShowCRM] = useState<Prospect | null>(null);
-
-  // lock body scroll when any modal opens (iPhone fix)
-  useEffect(() => {
-    const lock = showForm || !!showCRM;
-    document.body.style.overflow = lock ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [showForm, showCRM]);
-
-  useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supa.auth.getSession();
-      const id = session?.user?.id ?? null;
-      setUid(id);
-      if (!id) return;
-
-      const { data: evts } = await supa.from('events').select('*').order('starts_at', { ascending: true });
-      setEvents((evts ?? []) as EventRow[]);
-
-      const { data: prs } = await supa
-        .from('prospects')
-        .select('id, first_name, last_name, phone, email, next_step, due_date')
-        .order('due_date', { ascending: true });
-      setProspects((prs ?? []) as Prospect[]);
-    })();
-  }, []);
-
-  /** ----- View window (day/week/month) based on anchor ----- */
-  const range = useMemo(() => {
-    const start = new Date(anchor);
-    const end = new Date(anchor);
-    if (view === 'day') {
-      start.setHours(0,0,0,0);
-      end.setHours(23,59,59,999);
-    } else if (view === 'week') {
-      const dow = anchor.getDay(); // 0 Sun
-      const mondayOffset = (dow + 6) % 7;
-      start.setDate(anchor.getDate() - mondayOffset); start.setHours(0,0,0,0);
-      end.setDate(start.getDate() + 6); end.setHours(23,59,59,999);
-    } else {
-      start.setDate(1); start.setHours(0,0,0,0);
-      end.setMonth(start.getMonth() + 1, 0); end.setHours(23,59,59,999);
-    }
-    return { start, end };
-  }, [anchor, view]);
-
-  const withinRange = (iso: string) => {
-    const d = new Date(iso);
-    return d >= range.start && d <= range.end;
-  };
-
-  const humanRangeLabel = useMemo(() => {
-    if (view === 'day') return anchor.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
-    if (view === 'week') {
-      const a = range.start.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      const b = range.end.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-      return `${a} – ${b}`;
-    }
-    // month
-    return anchor.toLocaleDateString([], { year: 'numeric', month: 'long' });
-  }, [anchor, view, range]);
-
-  /** ----- Derived items ----- */
-  const viewEvents = useMemo(() => events.filter(e => withinRange(e.starts_at)), [events, range]);
-  const crmReminders = useMemo(() => {
-    if (!includeCRM) return [] as { id: string; title: string; starts_at: string; prospectId: string }[];
-    return prospects
-      .filter(p => p.due_date && withinRange(`${p.due_date}T12:00:00Z`))
-      .map(p => ({
-        id: `crm-${p.id}`,
-        title: `${(p.first_name ?? '').trim()} ${(p.last_name ?? '').trim()}`.trim() + (p.next_step ? ` • ${p.next_step}` : ''),
-        starts_at: `${p.due_date!}T12:00:00Z`,
-        prospectId: p.id,
-      }));
-  }, [prospects, includeCRM, range]);
+  async function load() {
+    const { data, error } = await supa.from('events').select('*').order('start_at');
+    if (error) console.error(error);
+    setRows((data ?? []) as any);
+  }
+  useEffect(()=>{ load(); }, []);
 
   const grouped = useMemo(() => {
-    const all = [
-      ...viewEvents.map(e => ({ kind: 'event' as const, date: e.starts_at.slice(0,10), e })),
-      ...crmReminders.map(c => ({ kind: 'crm' as const, date: c.starts_at.slice(0,10), c })),
-    ];
-    const by = new Map<string, typeof all>();
-    all.forEach(x => { if (!by.has(x.date)) by.set(x.date, [] as any); by.get(x.date)!.push(x); });
-    return Array.from(by.entries()).sort(([a],[b]) => a.localeCompare(b));
-  }, [viewEvents, crmReminders]);
-
-  /** ----- CRUD ----- */
-  const openCreate = () => {
-    const d = anchor.toISOString().slice(0,10);
-    setForm({ id: null, title: '', description: '', location: '', startDate: d, startTime: '09:00', endDate: d, endTime: '10:00' });
-    setShowForm(true);
-  };
-  const openEdit = (e: EventRow) => {
-    setForm({
-      id: e.id,
-      title: e.title,
-      description: e.description ?? '',
-      location: e.location ?? '',
-      startDate: e.starts_at.slice(0,10),
-      startTime: e.starts_at.slice(11,16),
-      endDate: (e.ends_at ?? e.starts_at).slice(0,10),
-      endTime: (e.ends_at ?? e.starts_at).slice(11,16),
+    const m = new Map<string, EventRow[]>();
+    rows.forEach(r => {
+      const key = r.start_at.split('T')[0];
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(r);
     });
-    setShowForm(true);
-  };
-  const closeForm = () => { setShowForm(false); setForm({ ...emptyForm, startDate: today(), endDate: today() }); };
+    return Array.from(m.entries()).sort((a,b)=> a[0] < b[0] ? -1 : 1);
+  }, [rows]);
 
-  const save = async () => {
-    if (!uid) return;
-    if (!form.title.trim() || !form.startDate || !form.startTime) return alert('Title, start date & time required');
-    const starts_at = isoFromDateTime(form.startDate, form.startTime);
-    const ends_at = (form.endDate && form.endTime) ? isoFromDateTime(form.endDate, form.endTime) : null;
-
-    if (form.id) {
-      const { error } = await supa.from('events').update({
-        title: form.title.trim(), description: form.description || null, location: form.location || null, starts_at, ends_at
-      }).eq('id', form.id);
+  async function save(ev: EventRow) {
+    if (ev.id) {
+      const { error } = await supa.from('events').update(ev).eq('id', ev.id);
       if (error) return alert(error.message);
     } else {
-      const { error } = await supa.from('events').insert([{
-        owner: uid, title: form.title.trim(), description: form.description || null, location: form.location || null, starts_at, ends_at
-      }]);
+      const { error } = await supa.from('events').insert(ev);
       if (error) return alert(error.message);
     }
-    const { data } = await supa.from('events').select('*').order('starts_at', { ascending: true });
-    setEvents((data ?? []) as EventRow[]);
-    closeForm();
-  };
-
-  const remove = async (id: string) => {
+    setOpen(null);
+    await load();
+  }
+  async function remove(id: string) {
     if (!confirm('Delete this event?')) return;
     const { error } = await supa.from('events').delete().eq('id', id);
-    if (!error) setEvents(prev => prev.filter(e => e.id !== id));
-  };
-
-  /** ----- CSV import ----- */
-  const handleCSV = async (file: File) => {
-    if (!uid) return;
-    const rows = parseCSV(await file.text());
-    const header = rows[0]?.map(s => s.toLowerCase().trim()) ?? [];
-    const idx = (k: string) => header.indexOf(k);
-    if (!(header.includes('title') && header.includes('start_date') && header.includes('start_time'))) {
-      alert('CSV needs: title,start_date,start_time');
-      return;
-    }
-    const payload = rows.slice(1).map(r => {
-      const title = (r[idx('title')] ?? '').trim();
-      const sd = (r[idx('start_date')] ?? '').trim();
-      const st = (r[idx('start_time')] ?? '').trim();
-      if (!title || !sd || !st) return null;
-      const ed = (r[idx('end_date')] ?? '').trim();
-      const et = (r[idx('end_time')] ?? '').trim();
-      return {
-        owner: uid,
-        title,
-        location: (r[idx('location')] ?? '').trim() || null,
-        description: (r[idx('description')] ?? '').trim() || null,
-        starts_at: isoFromDateTime(sd, st),
-        ends_at: ed && et ? isoFromDateTime(ed, et) : null
-      };
-    }).filter(Boolean) as Omit<EventRow, 'id'|'created_at'>[];
-    if (!payload.length) return alert('No valid rows');
-    const { error } = await supa.from('events').insert(payload);
     if (error) return alert(error.message);
-    const { data } = await supa.from('events').select('*').order('starts_at', { ascending: true });
-    setEvents((data ?? []) as EventRow[]);
-    alert(`Imported ${payload.length} event(s).`);
-  };
-
-  /** ----- Month grid (visual calendar) ----- */
-  const monthGrid = useMemo(() => {
-    if (view !== 'month') return null;
-    const year = anchor.getFullYear();
-    const month = anchor.getMonth();
-    const first = new Date(year, month, 1);
-    const firstDow = (first.getDay() + 6) % 7; // Monday=0
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const cells: { date: string; count: number }[] = [];
-    for (let i = 0; i < firstDow; i++) cells.push({ date: '', count: 0 });
-    for (let d = 1; d <= daysInMonth; d++) {
-      const ds = new Date(year, month, d).toISOString().slice(0,10);
-      const count = viewEvents.filter(e => e.starts_at.slice(0,10) === ds).length +
-        crmReminders.filter(c => c.starts_at.slice(0,10) === ds).length;
-      cells.push({ date: ds, count });
-    }
-    return { cells, daysInMonth, firstDow };
-  }, [view, anchor, viewEvents, crmReminders]);
-
-  const jump = (dir: -1 | 1) => {
-    const d = new Date(anchor);
-    if (view === 'day') d.setDate(d.getDate() + dir);
-    else if (view === 'week') d.setDate(d.getDate() + 7 * dir);
-    else d.setMonth(d.getMonth() + dir);
-    setAnchor(d);
-  };
+    await load();
+  }
 
   return (
-    <Page>
-      <div className="w-full">
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <button className="btn btn-ghost" onClick={() => jump(-1)} aria-label="Previous"><ChevronLeft className="w-4 h-4" /></button>
-            <div className="px-2 font-semibold">{humanRangeLabel}</div>
-            <button className="btn btn-ghost" onClick={() => jump(1)} aria-label="Next"><ChevronRight className="w-4 h-4" /></button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <select className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={view} onChange={e=>setView(e.target.value as any)}>
-              <option value="day">Day</option>
-              <option value="week">Week</option>
-              <option value="month">Month</option>
-            </select>
-
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={includeCRM} onChange={e=>setIncludeCRM(e.target.checked)} />
-              Include CRM
-            </label>
-
-            <label className="btn btn-ghost cursor-pointer inline-flex items-center gap-2">
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Import CSV</span>
-              <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e)=>e.target.files?.[0] && handleCSV(e.target.files[0])} />
-            </label>
-
-            <button className="btn btn-sky" onClick={openCreate}>Add Event</button>
-          </div>
+    <div className="w-full">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h1>Calendar</h1>
+        <div className="flex gap-2">
+          <select value={view} onChange={e=>setView(e.target.value as any)}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2">
+            <option value="list">List</option>
+            <option value="month">Month</option>
+            <option value="week">Week</option>
+            <option value="day">Day</option>
+          </select>
+          <button className="btn btn-sky inline-flex items-center gap-2" onClick={()=>setOpen(blankEvent())}>
+            <Plus className="w-4 h-4" /> Add Event
+          </button>
         </div>
-
-        {/* Month visual grid */}
-        {view === 'month' && monthGrid && (
-          <div className="mt-4">
-            <div className="grid grid-cols-7 gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-              {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} className="px-1">{d}</div>)}
-            </div>
-            <div className="mt-1 grid grid-cols-7 gap-2">
-              {monthGrid.cells.map((c, i) => (
-                <button
-                  key={i}
-                  className={`aspect-[1.2/1] rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 text-left p-2 ${c.date ? 'bg-white/90 dark:bg-zinc-900' : 'bg-transparent border-transparent cursor-default'}`}
-                  onClick={() => c.date && setAnchor(new Date(c.date))}
-                  disabled={!c.date}
-                >
-                  {c.date && (
-                    <>
-                      <div className="text-xs font-semibold">{parseInt(c.date.slice(-2), 10)}</div>
-                      {c.count > 0 && <div className="mt-2 inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200">{c.count} item{c.count>1?'s':''}</div>}
-                    </>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Grouped list (human dates) */}
-        {grouped.length === 0 && <Card className="mt-4">Nothing scheduled in this view.</Card>}
-
-        {grouped.map(([date, list]) => (
-          <section key={date} className="mt-6">
-            <h3 className="text-lg font-semibold">{fmtHuman(date)}</h3>
-            <div className="mt-2 grid gap-3">
-              {list.map((row, i) => (
-                <Card key={i} className="flex items-center justify-between gap-4">
-                  {/* time */}
-                  <div className="w-28 shrink-0 text-sm text-zinc-600 dark:text-zinc-300">
-                    {row.kind === 'event'
-                      ? `${fmtTime(row.e.starts_at)}${row.e.ends_at ? `–${fmtTime(row.e.ends_at)}` : ''}`
-                      : 'All-day'}
-                  </div>
-
-                  {/* details */}
-                  <div className="flex-1 min-w-0">
-                    {row.kind === 'event' ? (
-                      <>
-                        <div className="font-semibold truncate">{row.e.title}</div>
-                        <div className="text-sm text-zinc-600 dark:text-zinc-300 truncate">{row.e.location || ''}</div>
-                        {row.e.description && <div className="mt-1 text-sm line-clamp-2">{row.e.description}</div>}
-                      </>
-                    ) : (
-                      // CRM item – clickable opens prospect details
-                      <button
-                        className="text-left w-full"
-                        onClick={() => setShowCRM(prospects.find(p => p.id === row.c.prospectId) || null)}
-                        title="Open prospect"
-                      >
-                        <div className="font-semibold truncate">{row.c.title} <span className="ml-2 text-xs rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5">CRM</span></div>
-                        <div className="text-sm text-zinc-600 dark:text-zinc-300">Tap to view prospect</div>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* actions */}
-                  {row.kind === 'event' && (
-                    <div className="flex gap-2">
-                      <button className="btn-icon btn-ghost" onClick={() => openEdit(row.e)} title="Edit" aria-label="Edit">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button className="btn-icon btn-danger" onClick={() => remove(row.e.id)} title="Delete" aria-label="Delete">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </section>
-        ))}
-
-        {/* Create/Edit modal */}
-        {showForm && (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 overscroll-contain" onClick={closeForm}>
-            <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/5 dark:ring-white/10" onClick={(e)=>e.stopPropagation()}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200/70 dark:border-zinc-800/70">
-                <h3 className="text-lg font-semibold">{form.id ? 'Edit Event' : 'Add Event'}</h3>
-                <button onClick={closeForm} className="rounded-xl px-3 py-1.5 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Close</button>
-              </div>
-
-              <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="form-field md:col-span-2"><span className="form-label">Title</span>
-                  <input className="form-input" value={form.title} onChange={(e)=>setForm({...form, title:e.target.value})}/>
-                </label>
-                <label className="form-field md:col-span-2"><span className="form-label">Location</span>
-                  <input className="form-input" value={form.location} onChange={(e)=>setForm({...form, location:e.target.value})}/>
-                </label>
-                <label className="form-field"><span className="form-label">Start date</span>
-                  <input type="date" className="form-input" value={form.startDate} onChange={(e)=>setForm({...form, startDate:e.target.value})}/>
-                </label>
-                <label className="form-field"><span className="form-label">Start time</span>
-                  <input type="time" className="form-input" value={form.startTime} onChange={(e)=>setForm({...form, startTime:e.target.value})}/>
-                </label>
-                <label className="form-field"><span className="form-label">End date</span>
-                  <input type="date" className="form-input" value={form.endDate} onChange={(e)=>setForm({...form, endDate:e.target.value})}/>
-                </label>
-                <label className="form-field"><span className="form-label">End time</span>
-                  <input type="time" className="form-input" value={form.endTime} onChange={(e)=>setForm({...form, endTime:e.target.value})}/>
-                </label>
-                <label className="form-field md:col-span-2"><span className="form-label">Description</span>
-                  <textarea rows={4} className="form-input" value={form.description} onChange={(e)=>setForm({...form, description:e.target.value})}/>
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-2 px-6 pb-6">
-                <button className="rounded-xl px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700" onClick={closeForm}>Cancel</button>
-                <button className="rounded-xl px-4 py-2 btn-sky" onClick={save}>{form.id ? 'Save Changes' : 'Create Event'}</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* CRM detail modal */}
-        {showCRM && (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 overscroll-contain" onClick={()=>setShowCRM(null)}>
-            <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/5 dark:ring-white/10" onClick={(e)=>e.stopPropagation()}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200/70 dark:border-zinc-800/70">
-                <h3 className="text-lg font-semibold">{[showCRM.first_name, showCRM.last_name].filter(Boolean).join(' ') || 'Prospect'}</h3>
-                <button onClick={()=>setShowCRM(null)} className="rounded-xl px-3 py-1.5 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Close</button>
-              </div>
-              <div className="px-6 py-5 space-y-3">
-                {showCRM.phone && <div>📞 <a className="text-sky-600 underline" href={`tel:${showCRM.phone}`}>{showCRM.phone}</a></div>}
-                {showCRM.email && <div>✉️ <a className="text-sky-600 underline" href={`mailto:${showCRM.email}`}>{showCRM.email}</a></div>}
-                {showCRM.next_step && <div>Next step: <span className="font-medium">{showCRM.next_step}</span></div>}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
-    </Page>
+
+      {/* List view (full-width cards) */}
+      {view === 'list' && (
+        <div className="mt-6 space-y-6">
+          {grouped.map(([date, items])=>(
+            <section key={date}>
+              <div className="text-sm font-semibold opacity-70 mb-2">{fmtDate(date)}</div>
+              <div className="space-y-3">
+                {items.map(ev=>(
+                  <article key={ev.id} className="rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="font-semibold">{ev.title}</div>
+                        <div className="text-xs opacity-70">
+                          {fmtTime(ev.start_at)}{ev.end_at ? `–${fmtTime(ev.end_at)}` : ''}{ev.location ? ` • ${ev.location}` : ''}
+                          {ev.kind === 'crm' && <span className="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">CRM</span>}
+                        </div>
+                        {ev.notes && <div className="text-sm mt-1 opacity-90 line-clamp-3">{ev.notes}</div>}
+                        {ev.prospect_id && (
+                          <div className="mt-1 text-sm">
+                            <a className="text-sky-700 dark:text-sky-400 underline" href={`/office/list-builder?prospect=${ev.prospect_id}`}>
+                              View prospect
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button className="btn-icon" onClick={()=>setOpen(ev)} aria-label="Edit"><Pencil className="w-4 h-4"/></button>
+                        <button className="btn-icon btn-danger" onClick={()=>remove(ev.id)} aria-label="Delete"><Trash2 className="w-4 h-4"/></button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+          {rows.length === 0 && (
+            <div className="rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow px-4 py-3">No events yet.</div>
+          )}
+        </div>
+      )}
+
+      {/* Month/Week/Day views: placeholder frame so layout is full-width */}
+      {view !== 'list' && (
+        <div className="mt-6 rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 text-sm opacity-80">
+          {view.toUpperCase()} view coming next — list view stays fully functional meanwhile.
+        </div>
+      )}
+
+      {open && <EventModal initial={open} onClose={()=>setOpen(null)} onSave={save} />}
+    </div>
   );
 }
 
-/** Lightweight CSV parser (handles quotes & commas) */
-function parseCSV(text: string): string[][] {
-  const rows: string[][] = [];
-  let cur: string[] = [];
-  let field = '';
-  let inQuotes = false;
+function blankEvent(): EventRow {
+  const start = new Date();
+  start.setMinutes(0,0,0);
+  const end = new Date(start); end.setHours(end.getHours()+1);
+  return {
+    id: '' as any,
+    title: '',
+    location: '',
+    notes: '',
+    start_at: start.toISOString(),
+    end_at: end.toISOString(),
+    kind: 'custom',
+    prospect_id: null
+  };
+}
 
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
+function EventModal({ initial, onClose, onSave }:{
+  initial: EventRow; onClose: ()=>void; onSave:(e:EventRow)=>void;
+}) {
+  const [form, setForm] = useState<EventRow>(initial);
 
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; }
-        else { inQuotes = false; }
-      } else { field += c; }
-      continue;
-    }
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-xl rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+           onClick={(e)=>e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-black/5 dark:border-white/10 text-lg font-semibold">
+          {form.id ? 'Edit Event' : 'Add Event'}
+        </div>
+        <div className="p-6 space-y-4 max-h-[70vh] overflow-auto">
+          <Field label="Title">
+            <input className="form-input" value={form.title} onChange={e=>setForm({...form, title:e.target.value})}/>
+          </Field>
+          <div className="grid md:grid-cols-2 gap-4">
+            <Field label="Starts">
+              <input type="datetime-local" className="form-input"
+                value={form.start_at.slice(0,16)} onChange={e=>setForm({...form, start_at:new Date(e.target.value).toISOString()})}/>
+            </Field>
+            <Field label="Ends">
+              <input type="datetime-local" className="form-input"
+                value={form.end_at ? form.end_at.slice(0,16) : ''} onChange={e=>setForm({...form, end_at:e.target.value ? new Date(e.target.value).toISOString() : null})}/>
+            </Field>
+          </div>
+          <Field label="Location">
+            <input className="form-input" value={form.location || ''} onChange={e=>setForm({...form, location:e.target.value})}/>
+          </Field>
+          <Field label="Notes">
+            <textarea className="form-input min-h-[90px]" value={form.notes || ''} onChange={e=>setForm({...form, notes:e.target.value})}/>
+          </Field>
+        </div>
+        <div className="px-6 py-4 border-t border-black/5 dark:border-white/10 flex justify-end gap-3">
+          <button className="rounded-xl bg-zinc-200 dark:bg-zinc-800 px-4 py-2" onClick={onClose}>Cancel</button>
+          <button className="btn btn-sky" onClick={()=>onSave(form)}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-    if (c === '"') inQuotes = true;
-    else if (c === ',') { cur.push(field); field = ''; }
-    else if (c === '\n' || c === '\r') {
-      if (c === '\r' && text[i + 1] === '\n') i++;
-      cur.push(field); rows.push(cur); cur = []; field = '';
-    } else field += c;
-  }
-  if (field.length || cur.length) { cur.push(field); rows.push(cur); }
-  return rows;
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="form-field block">
+      <span className="form-label">{label}</span>
+      {children}
+    </label>
+  );
 }
