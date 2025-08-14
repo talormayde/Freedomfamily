@@ -1,604 +1,237 @@
 'use client';
+
 import { useEffect, useMemo, useState } from 'react';
+import { Page, Card } from '@/components/ui';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { Card, Page } from '@/components/ui';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Plus } from 'lucide-react';
 
 type Prospect = {
   id: string;
   owner: string | null;
-
-  // Legacy fields you may still have:
-  full_name: string | null;
-  contact: string | null;
-  status: string;
-
-  // Expanded fields
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
   email: string | null;
-  age: number | null;
-  list_bucket: 'A' | 'B' | 'C' | null;
+  age: string | null;
+  list_bucket: 'A'|'B'|'C';
   how_known: string | null;
   location: string | null;
-  relationship_status:
-    | 'single'
-    | 'dating'
-    | 'engaged'
-    | 'married'
-    | 'single_with_kids'
-    | 'married_with_kids'
-    | 'unknown'
-    | null;
-  date_of_connection: string | null; // ISO yyyy-mm-dd
-  looking: 'looker' | 'non-looker' | 'leaner' | 'no_ones_home' | 'curious' | 'pending' | null;
-  last_step:
-    | 'Phone Call'
-    | 'PQI'
-    | 'QI1'
-    | 'QI2'
-    | '1st Look'
-    | 'Follow Up 1'
-    | '2nd Look'
-    | 'Follow Up 2'
-    | '3rd Look'
-    | 'Follow Up 3'
-    | 'GSM'
-    | null;
-  last_step_date: string | null; // ISO yyyy-mm-dd
-  next_step:
-    | 'Phone Call'
-    | 'PQI'
-    | 'QI1'
-    | 'QI2'
-    | '1st Look'
-    | 'Follow Up 1'
-    | '2nd Look'
-    | 'Follow Up 2'
-    | '3rd Look'
-    | 'Follow Up 3'
-    | 'GSM'
-    | 'Transition to Customer'
-    | null;
-  due_date: string | null; // ISO yyyy-mm-dd
-
+  relationship_status: 'single'|'dating'|'engaged'|'married'|'single_with_kids'|'married_with_kids'|'unknown'|null;
+  date_of_connection: string | null;  // yyyy-mm-dd
+  looking: 'looker'|'non-looker'|'leaner'|'no_ones_home'|'curious'|'pending'|null;
+  last_step: string | null;
+  last_step_date: string | null;      // yyyy-mm-dd
+  next_step: string | null;
+  due_date: string | null;            // yyyy-mm-dd
   notes: string | null;
   created_at: string;
 };
 
-const PIPE_STATUSES = ['QI1', 'QI2', 'STP', 'Guest', 'Followup', 'Won', 'Lost'] as const; // legacy
-const REL_OPTIONS = ['single', 'dating', 'engaged', 'married', 'single_with_kids', 'married_with_kids', 'unknown'] as const;
-const LOOKING = ['looker', 'non-looker', 'leaner', 'no_ones_home', 'curious', 'pending'] as const;
-const STEPS = ['Phone Call', 'PQI', 'QI1', 'QI2', '1st Look', 'Follow Up 1', '2nd Look', 'Follow Up 2', '3rd Look', 'Follow Up 3', 'GSM'] as const;
-const NEXT_STEPS = [...STEPS, 'Transition to Customer'] as const;
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const REL_OPTIONS: Prospect['relationship_status'][] = ['single','dating','engaged','married','single_with_kids','married_with_kids','unknown'];
+const LOOK_OPTIONS: NonNullable<Prospect['looking']>[] = ['looker','non-looker','leaner','no_ones_home','curious','pending'];
+const LAST_STEPS = ['Phone Call','PQI','QI1','QI2','1st Look','Follow Up 1','2nd Look','Follow Up 2','3rd Look','Follow Up 3','GSM'];
+const NEXT_STEPS = [...LAST_STEPS, 'Transition to Customer'] as const;
 
 export default function ListBuilderPage() {
   const supa = supabaseBrowser();
-  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [prospects, setProspects] = useState<Prospect[]>([]);
+  const [uid, setUid] = useState<string | null>(null);
+  const [rows, setRows] = useState<Prospect[]>([]);
   const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [listFilter, setListFilter] = useState<string>('');
-  const [dueFilter, setDueFilter] = useState<'overdue' | 'today' | 'upcoming' | ''>('');
-  const [dueSummary, setDueSummary] = useState({ overdue: 0, today: 0, upcoming: 0 });
 
-  // Form state
-  const emptyForm = {
-    first_name: '',
-    last_name: '',
-    phone: '',
-    email: '',
-    age: '' as any,
-    list_bucket: 'C' as 'A' | 'B' | 'C',
-    how_known: '',
-    location: '',
-    relationship_status: 'unknown' as Prospect['relationship_status'],
-    date_of_connection: null as string | null,
-    looking: 'pending' as Prospect['looking'],
-    last_step: null as Prospect['last_step'],
-    last_step_date: null as string | null,
-    next_step: null as Prospect['next_step'],
-    due_date: null as string | null,
-    notes: '',
-    // legacy compatibility
-    status: 'Followup' as string,
-    contact: '' as string,
-  };
-
+  // modal state + scroll lock for iPhone
+  const emptyForm: Partial<Prospect> = { first_name:'', last_name:'', phone:'', email:'', age:'', list_bucket:'C', how_known:'', location:'', relationship_status:'unknown', date_of_connection:null, looking:'pending', last_step:null, last_step_date:null, next_step:null, due_date:null, notes:'' };
   const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<Partial<Prospect>>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<typeof emptyForm>(emptyForm);
 
-  // Fetch + realtime
+  useEffect(() => { document.body.style.overflow = showForm ? 'hidden' : ''; return () => { document.body.style.overflow = ''; }; }, [showForm]);
+
   useEffect(() => {
-    const applyDueSummary = (rows: Prospect[]) => {
-      const t = todayISO();
-      const counts = { overdue: 0, today: 0, upcoming: 0 };
-      rows.forEach((p) => {
-        if (!p.due_date) return;
-        if (p.due_date < t) counts.overdue++;
-        else if (p.due_date === t) counts.today++;
-        else counts.upcoming++;
-      });
-      setDueSummary(counts);
-    };
-
-    const boot = async () => {
+    (async () => {
       const { data: { session } } = await supa.auth.getSession();
-      const uid = session?.user?.id ?? null;
-      setSessionUserId(uid);
-
-      if (!uid) {
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supa.from('prospects').select('*').order('created_at', { ascending: false });
-      if (error) setError(error.message);
-      else {
-        const rows = (data ?? []) as Prospect[];
-        setProspects(rows);
-        applyDueSummary(rows);
-      }
-      setLoading(false);
-    };
-    boot();
-
-    const channel = supa
-      .channel('prospects-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prospects' }, () => {
-        supa
-          .from('prospects')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .then(({ data }) => {
-            const rows = (data ?? []) as Prospect[];
-            setProspects(rows);
-            // recompute summary on change
-            const t = todayISO();
-            const counts = { overdue: 0, today: 0, upcoming: 0 };
-            rows.forEach((p) => {
-              if (!p.due_date) return;
-              if (p.due_date < t) counts.overdue++;
-              else if (p.due_date === t) counts.today++;
-              else counts.upcoming++;
-            });
-            setDueSummary(counts);
-          });
-      })
-      .subscribe();
-
-    return () => {
-      supa.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      const id = session?.user?.id ?? null;
+      setUid(id);
+      if (!id) return;
+      const { data } = await supa.from('prospects').select('*').order('created_at', { ascending: false });
+      setRows((data ?? []) as Prospect[]);
+    })();
   }, []);
 
   const filtered = useMemo(() => {
-    let arr = prospects;
-    if (statusFilter) arr = arr.filter((p) => (p.status ?? '') === statusFilter);
-    if (listFilter) arr = arr.filter((p) => (p.list_bucket ?? '') === listFilter);
-    if (dueFilter) {
-      const t = todayISO();
-      if (dueFilter === 'overdue') arr = arr.filter((p) => p.due_date && p.due_date < t);
-      if (dueFilter === 'today') arr = arr.filter((p) => p.due_date === t);
-      if (dueFilter === 'upcoming') arr = arr.filter((p) => p.due_date && p.due_date > t);
-    }
-    if (q) {
-      const needle = q.toLowerCase();
-      arr = arr.filter(
-        (p) =>
-          (p.first_name ?? '').toLowerCase().includes(needle) ||
-          (p.last_name ?? '').toLowerCase().includes(needle) ||
-          (p.email ?? '').toLowerCase().includes(needle) ||
-          (p.phone ?? '').toLowerCase().includes(needle) ||
-          (p.location ?? '').toLowerCase().includes(needle) ||
-          (p.notes ?? '').toLowerCase().includes(needle) ||
-          (p.how_known ?? '').toLowerCase().includes(needle),
-      );
-    }
-    return arr;
-  }, [prospects, q, statusFilter, listFilter, dueFilter]);
+    const t = q.trim().toLowerCase();
+    if (!t) return rows;
+    return rows.filter(r =>
+      [r.first_name, r.last_name, r.email, r.phone].some(v => (v ?? '').toLowerCase().includes(t))
+    );
+  }, [rows, q]);
 
-  const openNew = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setShowForm(true);
-  };
-
-  const openEdit = (p: Prospect) => {
-    setEditingId(p.id);
-    setForm({
-      first_name: p.first_name ?? '',
-      last_name: p.last_name ?? '',
-      phone: p.phone ?? '',
-      email: p.email ?? '',
-      age: (p.age as any) ?? '',
-      list_bucket: (p.list_bucket as any) ?? 'C',
-      how_known: p.how_known ?? '',
-      location: p.location ?? '',
-      relationship_status: (p.relationship_status as any) ?? 'unknown',
-      date_of_connection: p.date_of_connection ?? null,
-      looking: (p.looking as any) ?? 'pending',
-      last_step: p.last_step ?? null,
-      last_step_date: p.last_step_date ?? null,
-      next_step: p.next_step ?? null,
-      due_date: p.due_date ?? null,
-      notes: p.notes ?? '',
-      // legacy
-      status: p.status ?? 'Followup',
-      contact: p.contact ?? '',
-    });
-    setShowForm(true);
-  };
+  const openCreate = () => { setForm(emptyForm); setEditingId(null); setShowForm(true); };
+  const openEdit = (p: Prospect) => { setForm({ ...p }); setEditingId(p.id); setShowForm(true); };
 
   const save = async () => {
-    if (!sessionUserId) {
-      alert('Please sign in first.');
-      return;
-    }
-    if (!form.first_name.trim() && !form.last_name.trim()) {
-      alert('First or last name is required');
-      return;
-    }
-
+    if (!uid) return;
     const payload = {
-      owner: sessionUserId,
-      first_name: form.first_name || null,
-      last_name: form.last_name || null,
-      phone: form.phone || null,
-      email: form.email || null,
-      age: form.age === '' ? null : Number(form.age),
-      list_bucket: form.list_bucket,
-      how_known: form.how_known || null,
-      location: form.location || null,
-      relationship_status: form.relationship_status,
-      date_of_connection: form.date_of_connection || null,
-      looking: form.looking,
-      last_step: form.last_step || null,
-      last_step_date: form.last_step_date || null,
-      next_step: form.next_step || null,
-      due_date: form.due_date || null,
-      notes: form.notes || null,
-      // keep legacy fields roughly synced
-      full_name: `${form.first_name ?? ''} ${form.last_name ?? ''}`.trim() || null,
-      contact: form.contact || null,
-      status: form.status || 'Followup',
+      owner: uid,
+      first_name: (form.first_name ?? '').trim() || null,
+      last_name: (form.last_name ?? '').trim() || null,
+      phone: (form.phone ?? '').trim() || null,
+      email: (form.email ?? '').trim() || null,
+      age: (form.age ?? '').trim() || null,
+      list_bucket: (form.list_bucket ?? 'C') as 'A'|'B'|'C',
+      how_known: (form.how_known ?? '').trim() || null,
+      location: (form.location ?? '').trim() || null,
+      relationship_status: (form.relationship_status ?? 'unknown') as Prospect['relationship_status'],
+      date_of_connection: form.date_of_connection ?? null,
+      looking: (form.looking ?? 'pending') as Prospect['looking'],
+      last_step: form.last_step ?? null,
+      last_step_date: form.last_step_date ?? null,
+      next_step: form.next_step ?? null,
+      due_date: form.due_date ?? null,
+      notes: form.notes ?? null,
     };
-
     if (editingId) {
       const { error } = await supa.from('prospects').update(payload).eq('id', editingId);
-      if (error) {
-        alert(error.message);
-        return;
-      }
+      if (error) return alert(error.message);
     } else {
       const { error } = await supa.from('prospects').insert([payload]);
-      if (error) {
-        alert(error.message);
-        return;
-      }
+      if (error) return alert(error.message);
     }
+    const { data } = await supa.from('prospects').select('*').order('created_at', { ascending: false });
+    setRows((data ?? []) as Prospect[]);
     setShowForm(false);
   };
 
   const remove = async (id: string) => {
     if (!confirm('Delete this prospect?')) return;
     const { error } = await supa.from('prospects').delete().eq('id', id);
-    if (error) alert(error.message);
+    if (!error) setRows(rows.filter(r => r.id !== id));
   };
-
-  const toCSV = () => {
-    const rows = [
-      [
-        'First Name',
-        'Last Name',
-        'Phone',
-        'Email',
-        'Age',
-        'List',
-        'How Known',
-        'Location',
-        'Relationship',
-        'Date of Connection',
-        'Looking',
-        'Last Step',
-        'Last Step Date',
-        'Next Step',
-        'Due Date',
-        'Notes',
-      ],
-      ...filtered.map((p) => [
-        p.first_name ?? '',
-        p.last_name ?? '',
-        p.phone ?? '',
-        p.email ?? '',
-        p.age ?? '',
-        p.list_bucket ?? '',
-        p.how_known ?? '',
-        p.location ?? '',
-        p.relationship_status ?? '',
-        p.date_of_connection ?? '',
-        p.looking ?? '',
-        p.last_step ?? '',
-        p.last_step_date ?? '',
-        p.next_step ?? '',
-        p.due_date ?? '',
-        (p.notes ?? '').replace(/\n/g, ' '),
-      ]),
-    ];
-    const csv = rows
-      .map((r) =>
-        r
-          .map((field) => {
-            const s = String(field ?? '');
-            return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-          })
-          .join(','),
-      )
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'prospects.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  if (loading) return <Page><div className="mt-10">Loading…</div></Page>;
-  if (!sessionUserId)
-    return (
-      <Page>
-        <Card>
-          <h3 className="text-lg font-semibold">Sign in to use List Builder</h3>
-          <p className="mt-2 text-zinc-600 dark:text-zinc-300">Go back to the home screen and use the key to enter.</p>
-        </Card>
-      </Page>
-    );
-  if (error) return <Page><div className="mt-10 text-rose-600">{error}</div></Page>;
 
   return (
     <Page>
-      <div className="mx-auto w-full max-w-7xl">
-        <h1>List Builder</h1>
-        <div className="flex gap-2">
-          <button onClick={toCSV} className="btn bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Export CSV</button>
-          <button onClick={openNew} className="btn bg-sky-600 text-white">Add Prospect</button>
+      <div className="w-full">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1>List Builder</h1>
+          <button className="btn btn-sky inline-flex items-center gap-2" onClick={openCreate}><Plus className="w-4 h-4"/> Add Prospect</button>
         </div>
-      </div>
 
-      {/* Filters */}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <input
-          className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-4 py-3 text-base shadow-inner outline-none focus:ring-2 focus:ring-sky-400"
-          placeholder="Search name, phone, email, notes…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <select
-          className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-4 py-3"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="">All legacy statuses</option>
-          {PIPE_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-4 py-3"
-          value={listFilter}
-          onChange={(e) => setListFilter(e.target.value)}
-        >
-          <option value="">All lists</option>
-          {['A', 'B', 'C'].map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-4 py-3"
-          value={dueFilter}
-          onChange={(e) => setDueFilter(e.target.value as any)}
-        >
-          <option value="">Any due date</option>
-          <option value="overdue">Overdue</option>
-          <option value="today">Due Today</option>
-          <option value="upcoming">Upcoming</option>
-        </select>
-      </div>
-
-      {/* Due summary */}
-      <Card className="mt-3">
-        <div className="grid grid-cols-3 gap-3 text-center">
-          <div className="rounded-2xl p-4 bg-rose-50 dark:bg-rose-950/20">
-            <div className="text-sm text-rose-700 dark:text-rose-300">Overdue</div>
-            <div className="text-2xl font-semibold">{dueSummary.overdue}</div>
-          </div>
-          <div className="rounded-2xl p-4 bg-amber-50 dark:bg-amber-950/20">
-            <div className="text-sm text-amber-700 dark:text-amber-300">Due Today</div>
-            <div className="text-2xl font-semibold">{dueSummary.today}</div>
-          </div>
-          <div className="rounded-2xl p-4 bg-emerald-50 dark:bg-emerald-950/20">
-            <div className="text-sm text-emerald-700 dark:text-emerald-300">Upcoming</div>
-            <div className="text-2xl font-semibold">{dueSummary.upcoming}</div>
-          </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <input className="form-input" placeholder="Search name / phone / email" value={q} onChange={(e)=>setQ(e.target.value)} />
         </div>
-      </Card>
 
-      {/* Table */}
-      <Card className="mt-4 overflow-x-auto">
-        <table className="table">
-          <thead className="text-left text-zinc-500 dark:text-zinc-400">
-            <tr className="[&>th]:py-2 [&>th]:px-2">
-              <th>Name</th>
-              <th>Phone</th>
-              <th>Email</th>
-              <th>List</th>
-              <th>Looking</th>
-              <th>Last Step</th>
-              <th>Next Step</th>
-              <th>Due</th>
-              <th>Where</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody className="align-top">
-            {filtered.map((p) => (
-              <tr
-                key={p.id}
-                className="border-t border-dashed border-zinc-200/70 dark:border-zinc-800/70 [&>td]:py-3 [&>td]:px-2"
-              >
-                <td className="font-medium">
-                  {[p.first_name, p.last_name].filter(Boolean).join(' ') || p.full_name}
-                </td>
-                <td className="text-zinc-600 dark:text-zinc-300">{p.phone}</td>
-                <td className="text-zinc-600 dark:text-zinc-300">{p.email}</td>
-                <td>{p.list_bucket}</td>
-                <td>{p.looking}</td>
-                <td>{p.last_step}</td>
-                <td>{p.next_step}</td>
-                <td>{p.due_date ?? ''}</td>
-                <td className="text-zinc-600 dark:text-zinc-300">{p.location}</td>
-								<td className="text-right">
-  									<div className="inline-flex gap-2">
-    									<button onClick={() => openEdit(p)} className="btn-icon btn-ghost" title="Edit" aria-label="Edit">
-      									<Pencil className="w-4 h-4" />
-    									</button>
-    									<button onClick={() => remove(p.id)} className="btn-icon btn-danger" title="Delete" aria-label="Delete">
-      									<Trash2 className="w-4 h-4" />
-    									</button>
-  									</div>
-								</td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
+        <div className="mt-4 overflow-x-auto">
+          <table className="table min-w-[900px]">
+            <thead>
               <tr>
-                <td colSpan={10} className="py-10 text-center text-zinc-500">
-                  No prospects yet.
-                </td>
+                <th>Name</th><th>Phone</th><th>Email</th><th>List</th><th>Looking</th><th>Next Step</th><th>Due Date</th><th></th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-
-      {/* Modal */}
-      {showForm && (
-  <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setShowForm(false)}>
-    <div
-      className="w-full max-w-4xl rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200/70 dark:border-zinc-800/70">
-        <h3 className="text-lg font-semibold">{editingId ? 'Edit Prospect' : 'Add Prospect'}</h3>
-        <button onClick={() => setShowForm(false)} className="rounded-xl px-3 py-1.5 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Close</button>
-      </div>
-
-      <div className="px-6 py-5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <label className="form-field">
-            <span className="form-label">First name</span>
-            <input className="form-input" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Last name</span>
-            <input className="form-input" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">List</span>
-            <select className="form-input" value={form.list_bucket} onChange={(e) => setForm({ ...form, list_bucket: e.target.value as any })}>
-              {['A','B','C'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span className="form-label">Phone</span>
-            <input className="form-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Email</span>
-            <input type="email" className="form-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Age</span>
-            <input type="number" className="form-input" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
-          </label>
-
-          <label className="form-field md:col-span-2">
-            <span className="form-label">How do you know them?</span>
-            <input className="form-input" value={form.how_known} onChange={(e) => setForm({ ...form, how_known: e.target.value })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Where do they live?</span>
-            <input className="form-input" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
-          </label>
-
-          <label className="form-field">
-            <span className="form-label">Relationship status</span>
-            <select className="form-input" value={form.relationship_status ?? 'unknown'} onChange={(e) => setForm({ ...form, relationship_status: e.target.value as any })}>
-              {['single','dating','engaged','married','single_with_kids','married_with_kids','unknown'].map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-label">Date of connection</span>
-            <input type="date" className="form-input" value={form.date_of_connection ?? ''} onChange={(e) => setForm({ ...form, date_of_connection: e.target.value || null })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Looking?</span>
-            <select className="form-input" value={form.looking ?? 'pending'} onChange={(e) => setForm({ ...form, looking: e.target.value as any })}>
-              {['looker','non-looker','leaner','no_ones_home','curious','pending'].map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span className="form-label">Last step</span>
-            <select className="form-input" value={form.last_step ?? ''} onChange={(e) => setForm({ ...form, last_step: (e.target.value || null) as any })}>
-              <option value="">—</option>
-              {['Phone Call','PQI','QI1','QI2','1st Look','Follow Up 1','2nd Look','Follow Up 2','3rd Look','Follow Up 3','GSM'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-label">Last step date</span>
-            <input type="date" className="form-input" value={form.last_step_date ?? ''} onChange={(e) => setForm({ ...form, last_step_date: e.target.value || null })} />
-          </label>
-          <label className="form-field">
-            <span className="form-label">Next step</span>
-            <select className="form-input" value={form.next_step ?? ''} onChange={(e) => setForm({ ...form, next_step: (e.target.value || null) as any })}>
-              <option value="">—</option>
-              {['Phone Call','PQI','QI1','QI2','1st Look','Follow Up 1','2nd Look','Follow Up 2','3rd Look','Follow Up 3','GSM','Transition to Customer'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span className="form-label">Due date</span>
-            <input type="date" className="form-input" value={form.due_date ?? ''} onChange={(e) => setForm({ ...form, due_date: e.target.value || null })} />
-          </label>
-          <label className="form-field md:col-span-3">
-            <span className="form-label">Additional notes</span>
-            <textarea rows={4} className="form-input" value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-          </label>
+            </thead>
+            <tbody>
+              {filtered.map(p => (
+                <tr key={p.id}>
+                  <td>{[p.first_name,p.last_name].filter(Boolean).join(' ')}</td>
+                  <td>{p.phone ? <a className="text-sky-600 underline" href={`tel:${p.phone}`}>{p.phone}</a> : '-'}</td>
+                  <td className="truncate max-w-[240px]">{p.email ? <a className="text-sky-600 underline" href={`mailto:${p.email}`}>{p.email}</a> : '-'}</td>
+                  <td>{p.list_bucket}</td>
+                  <td>{p.looking?.replace(/_/g,' ') ?? ''}</td>
+                  <td>{p.next_step ?? ''}</td>
+                  <td>{p.due_date ?? ''}</td>
+                  <td className="text-right">
+                    <div className="inline-flex gap-2">
+                      <button className="btn-icon btn-ghost" onClick={()=>openEdit(p)} title="Edit" aria-label="Edit"><Pencil className="w-4 h-4"/></button>
+                      <button className="btn-icon btn-danger" onClick={()=>remove(p.id)} title="Delete" aria-label="Delete"><Trash2 className="w-4 h-4"/></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
 
-      <div className="flex justify-end gap-2 px-6 pb-6">
-        <button className="rounded-xl px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700" onClick={() => setShowForm(false)}>Cancel</button>
-        <button className="rounded-xl px-4 py-2 bg-sky-600 text-white" onClick={save}>{editingId ? 'Save Changes' : 'Create Prospect'}</button>
+        {/* Modal */}
+        {showForm && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 overscroll-contain" onClick={()=>setShowForm(false)}>
+            <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/5 dark:ring-white/10" onClick={(e)=>e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200/70 dark:border-zinc-800/70">
+                <h3 className="text-lg font-semibold">{editingId ? 'Edit Prospect' : 'Add Prospect'}</h3>
+                <button onClick={()=>setShowForm(false)} className="rounded-xl px-3 py-1.5 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Close</button>
+              </div>
+
+              <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label className="form-field"><span className="form-label">First name</span>
+                  <input className="form-input" value={form.first_name ?? ''} onChange={(e)=>setForm({...form, first_name:e.target.value})}/>
+                </label>
+                <label className="form-field"><span className="form-label">Last name</span>
+                  <input className="form-input" value={form.last_name ?? ''} onChange={(e)=>setForm({...form, last_name:e.target.value})}/>
+                </label>
+                <label className="form-field"><span className="form-label">List</span>
+                  <select className="form-input" value={form.list_bucket ?? 'C'} onChange={(e)=>setForm({...form, list_bucket:e.target.value as any})}>
+                    {['A','B','C'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label className="form-field"><span className="form-label">Phone</span>
+                  <input className="form-input" value={form.phone ?? ''} onChange={(e)=>setForm({...form, phone:e.target.value})}/>
+                </label>
+                <label className="form-field"><span className="form-label">Email</span>
+                  <input type="email" className="form-input" value={form.email ?? ''} onChange={(e)=>setForm({...form, email:e.target.value})}/>
+                </label>
+                <label className="form-field"><span className="form-label">Age</span>
+                  <input type="number" className="form-input" value={form.age ?? ''} onChange={(e)=>setForm({...form, age:e.target.value})}/>
+                </label>
+
+                <label className="form-field md:col-span-2"><span className="form-label">How do you know them?</span>
+                  <input className="form-input" value={form.how_known ?? ''} onChange={(e)=>setForm({...form, how_known:e.target.value})}/>
+                </label>
+                <label className="form-field"><span className="form-label">Where do they live?</span>
+                  <input className="form-input" value={form.location ?? ''} onChange={(e)=>setForm({...form, location:e.target.value})}/>
+                </label>
+
+                <label className="form-field"><span className="form-label">Relationship status</span>
+                  <select className="form-input" value={form.relationship_status ?? 'unknown'} onChange={(e)=>setForm({...form, relationship_status:e.target.value as any})}>
+                    {REL_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+                  </select>
+                </label>
+                <label className="form-field"><span className="form-label">Date of connection</span>
+                  <input type="date" className="form-input" value={form.date_of_connection ?? ''} onChange={(e)=>setForm({...form, date_of_connection:e.target.value || null})}/>
+                </label>
+                <label className="form-field"><span className="form-label">Looking?</span>
+                  <select className="form-input" value={form.looking ?? 'pending'} onChange={(e)=>setForm({...form, looking:e.target.value as any})}>
+                    {LOOK_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+                  </select>
+                </label>
+
+                <label className="form-field"><span className="form-label">Last step</span>
+                  <select className="form-input" value={form.last_step ?? ''} onChange={(e)=>setForm({...form, last_step:(e.target.value || null) as any})}>
+                    <option value="">—</option>
+                    {LAST_STEPS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label className="form-field"><span className="form-label">Last step date</span>
+                  <input type="date" className="form-input" value={form.last_step_date ?? ''} onChange={(e)=>setForm({...form, last_step_date:e.target.value || null})}/>
+                </label>
+                <label className="form-field"><span className="form-label">Next step</span>
+                  <select className="form-input" value={form.next_step ?? ''} onChange={(e)=>setForm({...form, next_step:(e.target.value || null) as any})}>
+                    <option value="">—</option>
+                    {NEXT_STEPS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+
+                <label className="form-field"><span className="form-label">Due date</span>
+                  <input type="date" className="form-input" value={form.due_date ?? ''} onChange={(e)=>setForm({...form, due_date:e.target.value || null})}/>
+                </label>
+                <label className="form-field md:col-span-3"><span className="form-label">Additional notes</span>
+                  <textarea rows={4} className="form-input" value={form.notes ?? ''} onChange={(e)=>setForm({...form, notes:e.target.value})}/>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 px-6 pb-6">
+                <button className="rounded-xl px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700" onClick={()=>setShowForm(false)}>Cancel</button>
+                <button className="rounded-xl px-4 py-2 btn-sky" onClick={save}>{editingId ? 'Save Changes' : 'Create Prospect'}</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
-  </div>
-)}
     </Page>
   );
 }
