@@ -8,15 +8,15 @@ export const metadata: Metadata = {
   description: 'Member hub for the Freedom Family',
   viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
   themeColor: '#0ea5e9',
-  // Using a static manifest in /public
+  // If you used the static manifest in /public
   manifest: '/manifest.webmanifest',
   icons: {
     apple: '/icons/icon-192.png',
     icon: [
       { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-    ],
-  },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+    ]
+  }
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -37,11 +37,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
               <div className="flex items-center gap-3">
                 <nav className="hidden md:flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300">
-                  <a href="/" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Home</a>
-                  <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Office</a>
-                  <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Library</a>
-                  <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Living</a>
-                  <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Kitchen</a>
+                  <a href="/office" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Office</a>
+                  <a href="/library" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Library</a>
+                  <a href="/living-room" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Living</a>
+                  <a href="/kitchen" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Kitchen</a>
                 </nav>
                 <ThemeToggle />
               </div>
@@ -53,10 +52,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             {/* Sidebar (desktop) */}
             <aside className="hidden md:block">
               <div className="sticky top-16 space-y-3">
-                <a className="block rounded-2xl px-4 py-3 card" href="#">💼 Office</a>
-                <a className="block rounded-2xl px-4 py-3 card" href="#">📚 Library</a>
-                <a className="block rounded-2xl px-4 py-3 card" href="#">💬 Living Room</a>
-                <a className="block rounded-2xl px-4 py-3 card" href="#">🍳 Kitchen</a>
+                <a className="block rounded-2xl px-4 py-3 card" href="/office">💼 Office</a>
+                <a className="block rounded-2xl px-4 py-3 card" href="/library">📚 Library</a>
+                <a className="block rounded-2xl px-4 py-3 card" href="/living-room">💬 Living Room</a>
+                <a className="block rounded-2xl px-4 py-3 card" href="/kitchen">🍳 Kitchen</a>
               </div>
             </aside>
 
@@ -69,10 +68,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200/70 dark:border-zinc-800/70 bg-white/90 dark:bg-zinc-900/80 backdrop-blur">
           <div className="mx-auto max-w-xl grid grid-cols-5 p-2 gap-2 text-xs">
             <a className="grid place-items-center rounded-xl py-2 bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200" href="/">Home</a>
-            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Office</a>
-            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Library</a>
-            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Living</a>
-            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Kitchen</a>
+            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="/office">Office</a>
+            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="/library">Library</a>
+            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="/living-room">Living</a>
+            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="/kitchen">Kitchen</a>
           </div>
         </nav>
       </body>
