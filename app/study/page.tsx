@@ -2,10 +2,10 @@
 import Link from 'next/link';
 import { Card, Page } from '@/components/ui';
 
-export default function StudyHome() {
+export default function OfficeHome() {
   return (
     <Page>
-      <h1>Study</h1>
+      <h1>Office</h1>
       <div className="mt-4 grid gap-4">
         <Card>
           <div className="flex items-center justify-between">
@@ -13,7 +13,7 @@ export default function StudyHome() {
               <h3 className="text-lg font-semibold">List Builder</h3>
               <p className="text-sm text-zinc-600 dark:text-zinc-300">Prospects, pipeline, and follow-ups.</p>
             </div>
-            <Link href="/study/list-builder" className="btn bg-sky-600 text-white">Open</Link>
+            <Link href="/office/list-builder" className="btn bg-sky-600 text-white">Open</Link>
           </div>
         </Card>
 
