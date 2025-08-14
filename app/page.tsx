@@ -31,17 +31,14 @@ export default function HomePage() {
     const { error } = await supa.auth.signInWithOtp({
       email,
       options: {
-        // after tapping the email key, bring them back to the site
-        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}` : undefined,
-      },
+        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}` : undefined
+      }
     });
     setSending(false);
+    setShowKeyModal(true);
     if (error) {
-      // brand-aligned error toast
-      setShowKeyModal(true);
-    } else {
-      // show our custom "key" popup instead of a generic alert
-      setShowKeyModal(true);
+      // You could display error text in the modal if desired
+      console.error(error.message);
     }
   };
 
@@ -74,7 +71,7 @@ export default function HomePage() {
           </button>
           <h1 className="mt-2">Welcome</h1>
           <p className="mt-1 text-zinc-600 dark:text-zinc-300">
-            Drop your email and we’ll send you a <span className="font-semibold">one‑time key</span> to the house.
+            Drop your email and we’ll send you a <span className="font-semibold">one-time key</span> to the house.
           </p>
 
           <div className="mt-6 grid gap-3">
@@ -101,10 +98,16 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Key-shaped popup */}
+          {/* Key-themed popup */}
           {showKeyModal && (
-            <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setShowKeyModal(false)}>
-              <div className="w-full max-w-sm rounded-[28px] border border-sky-200/70 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div
+              className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+              onClick={() => setShowKeyModal(false)}
+            >
+              <div
+                className="w-full max-w-sm rounded-[28px] border border-sky-200/70 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
                 <div className="bg-gradient-to-r from-sky-200 via-sky-300 to-sky-200 dark:from-sky-900/40 dark:via-sky-800/50 dark:to-sky-900/40 px-6 py-6">
                   <div className="mx-auto grid place-items-center size-16 rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow">
                     <KeyRound className="w-8 h-8 text-sky-600" />
@@ -113,13 +116,18 @@ export default function HomePage() {
                 <div className="px-6 py-5">
                   <h3 className="text-lg font-semibold">Your key is on the way</h3>
                   <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-                    We just sent a one‑time key to <span className="font-medium">{email || 'your email'}</span>. Open it on this device to unlock the house.
+                    We just sent a one-time key to <span className="font-medium">{email || 'your email'}</span>. Open it on this device to unlock the house.
                   </p>
                   <div className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
                     Didn’t see it? Check spam or try again.
                   </div>
                   <div className="mt-5 flex justify-end gap-2">
-                    <button onClick={() => setShowKeyModal(false)} className="btn bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Got it</button>
+                    <button
+                      onClick={() => setShowKeyModal(false)}
+                      className="btn bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                    >
+                      Got it
+                    </button>
                   </div>
                 </div>
               </div>
@@ -151,23 +159,20 @@ export default function HomePage() {
             </div>
           </Card>
 
-          {/* Tiles — Office now links to /office (index) */}
+          {/* Tiles — link to each room */}
           <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <a
-              href="/office"
-              className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-lime-200 to-lime-300 text-zinc-800 font-semibold grid place-items-center"
-            >
+            <a href="/office" className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-lime-200 to-lime-300 text-zinc-800 font-semibold grid place-items-center">
               Office
             </a>
-            <button className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-amber-200 to-amber-300 text-zinc-800 font-semibold">
+            <a href="/library" className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-amber-200 to-amber-300 text-zinc-800 font-semibold grid place-items-center">
               Library
-            </button>
-            <button className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-rose-200 to-rose-300 text-zinc-800 font-semibold">
+            </a>
+            <a href="/living-room" className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-rose-200 to-rose-300 text-zinc-800 font-semibold grid place-items-center">
               Living
-            </button>
-            <button className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-fuchsia-200 to-fuchsia-300 text-zinc-800 font-semibold">
+            </a>
+            <a href="/kitchen" className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-fuchsia-200 to-fuchsia-300 text-zinc-800 font-semibold grid place-items-center">
               Kitchen
-            </button>
+            </a>
             <button className="col-span-2 lg:col-span-4 h-28 rounded-[28px] grid place-items-center bg-sky-100 dark:bg-zinc-900 text-sky-800 dark:text-sky-200 font-semibold">
               <Calendar className="w-5 h-5" /> Calendar
             </button>
