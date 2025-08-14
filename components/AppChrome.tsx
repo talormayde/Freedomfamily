@@ -1,4 +1,5 @@
 'use client';
+
 import { ReactNode, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
@@ -29,7 +30,7 @@ export default function AppChrome({ children }: { children: ReactNode }) {
       {/* Header */}
       {!hideChrome && (
         <header className="sticky top-0 z-40 backdrop-blur bg-white/60 dark:bg-zinc-900/60 border-b border-zinc-200/60 dark:border-zinc-800/70">
-          <div className="ff-wrap h-14 flex items-center justify-between">
+          <div className="mx-auto w-full max-w-[1400px] px-4 md:px-6 h-14 flex items-center justify-between">
             <a href="/" className="flex items-center gap-2 font-semibold">
               <span className="inline-flex size-7 rounded-xl bg-sky-500/10 ring-1 ring-sky-200/70 items-center justify-center">🏠</span>
               <span>Freedom Family</span>
@@ -47,8 +48,8 @@ export default function AppChrome({ children }: { children: ReactNode }) {
         </header>
       )}
 
-      {/* Content */}
-      <div className={`ff-wrap flex-1 ${!hideChrome ? 'py-6 md:py-10' : ''}`}>
+      {/* Content – full width (no max), with sidebar when logged in */}
+      <div className={`${!hideChrome ? 'py-6 md:py-10' : ''} px-4 md:px-8 flex-1`}>
         <div className={!hideChrome ? 'grid grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)] gap-6 md:gap-8' : ''}>
           {!hideChrome && (
             <aside className="hidden md:block">
@@ -60,17 +61,17 @@ export default function AppChrome({ children }: { children: ReactNode }) {
               </div>
             </aside>
           )}
-          <main className="min-w-0">{children}</main>
+          <main className="min-w-0 w-full">{children}</main>
         </div>
       </div>
 
-      {/* Footer (keep even on home) */}
+      {/* Footer */}
       <Footer />
 
-      {/* Bottom nav (mobile only, hide on home when signed-out) */}
+      {/* Bottom nav (mobile) */}
       {!hideChrome && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200/70 dark:border-zinc-800/70 bg-white/90 dark:bg-zinc-900/80 backdrop-blur">
-          <div className="ff-wrap grid grid-cols-5 p-2 gap-2 text-xs">
+          <div className="mx-auto w-full max-w-[900px] px-4 grid grid-cols-5 p-2 gap-2 text-xs">
             <a className="grid place-items-center rounded-xl py-2 bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200" href="/">Home</a>
             <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="/office">Office</a>
             <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="/library">Library</a>
