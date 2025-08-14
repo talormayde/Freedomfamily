@@ -13,7 +13,6 @@ export default function HomePage() {
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
-      // listen for changes so the hero disappears right after login
       const { data: sub } = supa.auth.onAuthStateChange((_e, sess) => {
         if (mounted) setAuthed(!!sess);
       });
@@ -22,12 +21,13 @@ export default function HomePage() {
     return () => { mounted = false; };
   }, []);
 
-  // glass hero kept, but only when not authed
   return (
     <div className="px-4 md:px-6 lg:px-8 max-w-[1200px] mx-auto w-full">
       {!authed && (
-        <div className="relative overflow-hidden rounded-3xl p-6 md:p-10 mt-6 md:mt-10"
-             style={{ background: 'linear-gradient(135deg, rgba(180,245,200,.55), rgba(180,220,255,.55))' }}>
+        <div
+          className="relative overflow-hidden rounded-3xl p-6 md:p-10 mt-6 md:mt-10"
+          style={{ background: 'linear-gradient(135deg, rgba(180,245,200,.55), rgba(180,220,255,.55))' }}
+        >
           <div className="absolute inset-0 backdrop-blur-md" />
           <div className="relative grid md:grid-cols-2 gap-8 items-center">
             <div>
@@ -47,13 +47,16 @@ export default function HomePage() {
             <div className="rounded-2xl bg-white/80 p-4 sm:p-6 shadow-xl">
               <h2 className="font-semibold text-lg">I already have a key</h2>
               <p className="text-sm text-zinc-600">Enter your email to receive your one-time key.</p>
-              <form className="mt-3 space-y-3" onSubmit={async (e) => {
-                e.preventDefault();
-                const supa = supabaseBrowser();
-                const redirectTo = (process.env.NEXT_PUBLIC_SITE_URL || '') + '/auth/callback';
-                await supa.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
-                alert('Key sent! Check your inbox.');
-              }}>
+              <form
+                className="mt-3 space-y-3"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const supa = supabaseBrowser();
+                  const redirectTo = (process.env.NEXT_PUBLIC_SITE_URL || '') + '/auth/callback';
+                  await supa.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
+                  alert('Key sent! Check your inbox.');
+                }}
+              >
                 <input
                   type="email"
                   required
@@ -77,7 +80,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Rooms grid — always visible (you said “glass house” glimpse) */}
+      {/* Rooms grid — same design, now includes Calendar */}
       <div className="grid md:grid-cols-2 gap-6 mt-8">
         <Link href="/office" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
           <div className="font-semibold text-lg">Office</div>
@@ -86,6 +89,10 @@ export default function HomePage() {
         <Link href="/library" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
           <div className="font-semibold text-lg">Library</div>
           <div className="text-sm text-zinc-600">Trainings & Media</div>
+        </Link>
+        <Link href="/calendar" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
+          <div className="font-semibold text-lg">Calendar</div>
+          <div className="text-sm text-zinc-600">Month • Week • List • CRM</div>
         </Link>
         <Link href="/living" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
           <div className="font-semibold text-lg">Living Room</div>
