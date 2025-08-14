@@ -1,78 +1,154 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import EmailKeyForm from '@/components/EmailKeyForm';
+import { House, BookOpen, MessageSquare, Utensils, KeyRound } from 'lucide-react';
 
 export default function HomePage() {
-  const supa = supabaseBrowser();
-  const [authed, setAuthed] = useState<boolean | null>(null); // null = loading
+  const [authed, setAuthed] = useState(false);
+  const [email, setEmail] = useState('');
 
   useEffect(() => {
     let mounted = true;
+    const supa = supabaseBrowser();
+
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
-      supa.auth.onAuthStateChange((_e, sess) => mounted && setAuthed(!!sess));
     })();
-    return () => { mounted = false; };
+
+    // ✅ Return void from the callback and clean up the subscription
+    const { data: { subscription } } = supa.auth.onAuthStateChange((_evt, sess) => {
+      if (mounted) setAuthed(!!sess);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  if (authed === null) {
-    return <div className="h-[60vh] grid place-items-center opacity-60 text-sm">Loading…</div>;
+  async function sendKey() {
+    const supa = supabaseBrowser();
+    await supa.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || ''}/auth/callback`
+      }
+    });
+    alert('Key sent. Check your email.');
   }
 
-  if (authed) {
-    return (
-      <div className="w-full">
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          <Tile href="/office" title="Office" subtitle="CRM, Calendar, KPIs" />
-          <Tile href="/calendar" title="Calendar" subtitle="Daily • Weekly • Monthly" />
-          <Tile href="/library" title="Library" subtitle="Trainings & media" />
-          <Tile href="/living" title="Living Room" subtitle="Community" />
-        </div>
-      </div>
-    );
-  }
-
-  // Logged out → “glass door” with key request
   return (
-    <div className="w-full">
-      <section className="relative overflow-hidden rounded-3xl bg-white/70 dark:bg-zinc-900/60 shadow-xl ring-1 ring-black/5 dark:ring-white/10 p-6 sm:p-10">
-        <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -top-10 left-6 h-40 w-72 rounded-3xl bg-sky-200/40 blur-2xl" />
-          <div className="absolute top-10 right-10 h-40 w-80 rounded-3xl bg-teal-200/40 blur-2xl" />
-        </div>
-        <div className="grid md:grid-cols-2 gap-8 items-center">
-          <div>
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 text-xl">🔑</div>
-            <h1 className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">Welcome to the House</h1>
-            <p className="mt-3 max-w-[52ch] text-zinc-600 dark:text-zinc-300">
-              A member hub for the Freedom Family. It’s a glass-house—you can glimpse the rooms,
-              but you’ll need your key to step inside.
-            </p>
-            <ul className="mt-6 grid sm:grid-cols-2 gap-3 text-sm">
-              <li className="rounded-2xl bg-white/70 dark:bg-zinc-900/70 shadow px-3 py-2">🏢 <b>Office:</b> CRM, calendar, KPIs</li>
-              <li className="rounded-2xl bg-white/70 dark:bg-zinc-900/70 shadow px-3 py-2">📚 <b>Library:</b> trainings & media</li>
-              <li className="rounded-2xl bg-white/70 dark:bg-zinc-900/70 shadow px-3 py-2">💬 <b>Living Room:</b> community</li>
-              <li className="rounded-2xl bg-white/70 dark:bg-zinc-900/70 shadow px-3 py-2">🧰 <b>Kitchen:</b> resources & tools</li>
-            </ul>
-          </div>
-          <EmailKeyForm />
-        </div>
-      </section>
+    <div className="mx-auto w-full max-w-[1200px] px-4 md:px-8 py-8">
+      {/* Rooms rail (always visible) */}
+      <aside className="hidden md:block fixed left-4 top-20 space-y-4 w-56">
+        <NavTile href="/office" icon={<House className="h-5 w-5" />} label="Office" />
+        <NavTile href="/library" icon={<BookOpen className="h-5 w-5" />} label="Library" />
+        <NavTile href="/living" icon={<MessageSquare className="h-5 w-5" />} label="Living Room" />
+        <NavTile href="/kitchen" icon={<Utensils className="h-5 w-5" />} label="Kitchen" />
+      </aside>
+
+      <main className="md:ml-64">
+        {/* Glass landing shows only when NOT authed */}
+        {!authed && (
+          <section className="relative overflow-hidden rounded-3xl bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl ring-1 ring-black/5 shadow-lg p-6 md:p-10">
+            <div className="absolute -z-10 inset-0 opacity-60">
+              <div className="h-full w-full bg-gradient-to-br from-sky-200 via-emerald-200 to-amber-200" />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+              <div>
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 ring-1 ring-black/5 mb-4">
+                  <KeyRound className="h-6 w-6 text-sky-600" />
+                </div>
+                <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+                  Welcome to the House
+                </h1>
+                <p className="mt-3 text-zinc-700 dark:text-zinc-300 max-w-prose">
+                  A glass-house operation for the Freedom Family. You can glimpse the rooms behind the
+                  door, but you’ll need your key to step inside.
+                </p>
+
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Badge icon={<House className="h-4 w-4" />} text="Office: CRM, calendar, KPIs" />
+                  <Badge icon={<BookOpen className="h-4 w-4" />} text="Library: trainings & media" />
+                  <Badge icon={<MessageSquare className="h-4 w-4" />} text="Living Room: community" />
+                  <Badge icon={<Utensils className="h-4 w-4" />} text="Kitchen: resources & tools" />
+                </div>
+              </div>
+
+              <div className="w-full">
+                <h2 className="text-xl font-semibold mb-3">I already have a key</h2>
+                <div className="flex gap-3">
+                  <input
+                    type="email"
+                    inputMode="email"
+                    className="flex-1 rounded-xl border border-zinc-300 bg-white/80 px-4 py-2 outline-none focus:ring-2 focus:ring-sky-400"
+                    placeholder="you@domain.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                  <button
+                    onClick={sendKey}
+                    className="rounded-xl bg-sky-600 text-white px-4 py-2 font-medium hover:bg-sky-700"
+                  >
+                    Send My Key
+                  </button>
+                </div>
+
+                <div className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                  By continuing, you’ll receive a one-time sign-in key at the email above.
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* When authed, show quick room cards instead of the landing */}
+        {authed && (
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <RoomCard href="/office" title="Office" subtitle="CRM, Calendar, KPIs" />
+            <RoomCard href="/library" title="Library" subtitle="Trainings & Media" />
+            <RoomCard href="/living" title="Living Room" subtitle="Community" />
+            <RoomCard href="/kitchen" title="Kitchen" subtitle="Resources & Tools" />
+          </section>
+        )}
+      </main>
     </div>
   );
 }
 
-function Tile({ href, title, subtitle }: { href: string; title: string; subtitle: string }) {
+function NavTile({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
   return (
-    <Link href={href} className="rounded-3xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 hover:bg-white">
-      <div className="text-xl font-semibold">{title}</div>
-      <div className="mt-1 text-sm opacity-80">{subtitle}</div>
+    <Link
+      href={href}
+      className="flex items-center gap-3 rounded-2xl bg-white/70 backdrop-blur ring-1 ring-black/5 px-4 py-3 hover:bg-white"
+    >
+      <span>{icon}</span>
+      <span className="font-medium">{label}</span>
+    </Link>
+  );
+}
+
+function Badge({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/5">
+      {icon}
+      <span className="text-sm">{text}</span>
+    </div>
+  );
+}
+
+function RoomCard({ href, title, subtitle }: { href: string; title: string; subtitle: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-3xl bg-white/70 backdrop-blur ring-1 ring-black/5 p-6 hover:bg-white transition"
+    >
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="text-sm text-zinc-600 mt-1">{subtitle}</p>
     </Link>
   );
 }
