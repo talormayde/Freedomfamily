@@ -14,6 +14,7 @@ export default function HomePage() {
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
+      // keep UI in sync immediately after login
       const { data: sub } = supa.auth.onAuthStateChange((_e, sess) => {
         if (mounted) setAuthed(!!sess);
       });
@@ -24,12 +25,13 @@ export default function HomePage() {
 
   return (
     <div className="px-4 md:px-6 lg:px-8 max-w-[1200px] mx-auto w-full">
+      {/* Glass hero (only when not authed) */}
       {!authed && (
         <div
           className="relative overflow-hidden rounded-3xl p-6 md:p-10 mt-6 md:mt-10"
           style={{ background: 'linear-gradient(135deg, rgba(180,245,200,.55), rgba(180,220,255,.55))' }}
         >
-          {/* decorative layer must not intercept clicks */}
+          {/* blur layer must not eat clicks */}
           <div className="absolute inset-0 backdrop-blur-md pointer-events-none" aria-hidden="true" />
           {/* content layer */}
           <div className="relative z-10 pointer-events-auto grid md:grid-cols-2 gap-8 items-center">
@@ -48,7 +50,7 @@ export default function HomePage() {
               </ul>
             </div>
 
-            {/* Email key form */}
+            {/* Key form */}
             <div className="rounded-2xl bg-white/80 p-4 sm:p-6 shadow-xl">
               <h2 className="font-semibold text-lg">I already have a key</h2>
               <p className="text-sm text-zinc-600">Enter your email to receive your one-time key.</p>
@@ -91,42 +93,28 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Rooms grid — now true anchors for maximum iOS compatibility */}
+      {/* Rooms grid — NOW only visible when authed (prevents “see everything” before login) */}
       {authed && (
         <div className="grid md:grid-cols-2 gap-6 mt-8">
-          <Link href="/office" legacyBehavior prefetch>
-            <a className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition cursor-pointer">
-              <div className="font-semibold text-lg">Office</div>
-              <div className="text-sm text-zinc-600">CRM, Calendar, KPIs</div>
-            </a>
+          <Link href="/office" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
+            <div className="font-semibold text-lg">Office</div>
+            <div className="text-sm text-zinc-600">CRM, Calendar, KPIs</div>
           </Link>
-
-          <Link href="/library" legacyBehavior prefetch>
-            <a className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition cursor-pointer">
-              <div className="font-semibold text-lg">Library</div>
-              <div className="text-sm text-zinc-600">Trainings & Media</div>
-            </a>
+          <Link href="/library" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
+            <div className="font-semibold text-lg">Library</div>
+            <div className="text-sm text-zinc-600">Trainings & Media</div>
           </Link>
-
-          <Link href="/living" legacyBehavior prefetch>
-            <a className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition cursor-pointer">
-              <div className="font-semibold text-lg">Living Room</div>
-              <div className="text-sm text-zinc-600">Community</div>
-            </a>
+          <Link href="/living" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
+            <div className="font-semibold text-lg">Living Room</div>
+            <div className="text-sm text-zinc-600">Community</div>
           </Link>
-
-          <Link href="/kitchen" legacyBehavior prefetch>
-            <a className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition cursor-pointer">
-              <div className="font-semibold text-lg">Kitchen</div>
-              <div className="text-sm text-zinc-600">Resources & Tools</div>
-            </a>
+          <Link href="/kitchen" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
+            <div className="font-semibold text-lg">Kitchen</div>
+            <div className="text-sm text-zinc-600">Resources & Tools</div>
           </Link>
-
-          <Link href="/calendar" legacyBehavior prefetch>
-            <a className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition cursor-pointer">
-              <div className="font-semibold text-lg">Calendar</div>
-              <div className="text-sm text-zinc-600">Month / Week / Day</div>
-            </a>
+          <Link href="/calendar" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
+            <div className="font-semibold text-lg">Calendar</div>
+            <div className="text-sm text-zinc-600">Month / Week / Day</div>
           </Link>
         </div>
       )}
