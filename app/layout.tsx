@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <div className="flex items-center gap-3">
                 <nav className="hidden md:flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300">
                   <a href="/" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Home</a>
-                  <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Study</a>
+                  <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Office</a>
                   <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Library</a>
                   <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Living</a>
                   <a href="#" className="px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800">Kitchen</a>
@@ -53,7 +53,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             {/* Sidebar (desktop) */}
             <aside className="hidden md:block">
               <div className="sticky top-16 space-y-3">
-                <a className="block rounded-2xl px-4 py-3 card" href="#">🧠 Study</a>
+                <a className="block rounded-2xl px-4 py-3 card" href="#">💼 Office</a>
                 <a className="block rounded-2xl px-4 py-3 card" href="#">📚 Library</a>
                 <a className="block rounded-2xl px-4 py-3 card" href="#">💬 Living Room</a>
                 <a className="block rounded-2xl px-4 py-3 card" href="#">🍳 Kitchen</a>
@@ -69,7 +69,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200/70 dark:border-zinc-800/70 bg-white/90 dark:bg-zinc-900/80 backdrop-blur">
           <div className="mx-auto max-w-xl grid grid-cols-5 p-2 gap-2 text-xs">
             <a className="grid place-items-center rounded-xl py-2 bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200" href="/">Home</a>
-            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Study</a>
+            <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Office</a>
             <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Library</a>
             <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Living</a>
             <a className="grid place-items-center rounded-xl py-2 text-zinc-600 dark:text-zinc-300" href="#">Kitchen</a>
