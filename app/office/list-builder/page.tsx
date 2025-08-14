@@ -366,7 +366,7 @@ export default function ListBuilderPage() {
 
   return (
     <Page>
-      <div className="flex items-center justify-between gap-3">
+      <div className="mx-auto w-full max-w-7xl">
         <h1>List Builder</h1>
         <div className="flex gap-2">
           <button onClick={toCSV} className="btn bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Export CSV</button>
@@ -501,48 +501,109 @@ export default function ListBuilderPage() {
 
       {/* Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-3xl card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold">{editingId ? 'Edit Prospect' : 'Add Prospect'}</h3>
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" placeholder="First name" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })}/>
-              <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" placeholder="Last name" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })}/>
-              <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.list_bucket} onChange={(e) => setForm({ ...form, list_bucket: e.target.value as any })}>
-                {['A', 'B', 'C'].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+  <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setShowForm(false)}>
+    <div
+      className="w-full max-w-4xl rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200/70 dark:border-zinc-800/70">
+        <h3 className="text-lg font-semibold">{editingId ? 'Edit Prospect' : 'Add Prospect'}</h3>
+        <button onClick={() => setShowForm(false)} className="rounded-xl px-3 py-1.5 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700">Close</button>
+      </div>
 
-              <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}/>
-              <input type="email" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}/>
-              <input type="number" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" placeholder="Age" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })}/>
+      <div className="px-6 py-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <label className="form-field">
+            <span className="form-label">First name</span>
+            <input className="form-input" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">Last name</span>
+            <input className="form-input" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">List</span>
+            <select className="form-input" value={form.list_bucket} onChange={(e) => setForm({ ...form, list_bucket: e.target.value as any })}>
+              {['A','B','C'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
 
-              <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2 md:col-span-2" placeholder="How do you know them?" value={form.how_known} onChange={(e) => setForm({ ...form, how_known: e.target.value })}/>
-              <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" placeholder="Where do they live?" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}/>
+          <label className="form-field">
+            <span className="form-label">Phone</span>
+            <input className="form-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">Email</span>
+            <input type="email" className="form-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">Age</span>
+            <input type="number" className="form-input" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
+          </label>
 
-              <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.relationship_status ?? 'unknown'} onChange={(e) => setForm({ ...form, relationship_status: e.target.value as any })}>
-                {REL_OPTIONS.map((s) => (<option key={s} value={s}> {s.replace(/_/g, ' ')} </option>))}
-              </select>
-              <input type="date" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.date_of_connection ?? ''} onChange={(e) => setForm({ ...form, date_of_connection: e.target.value || null })}
-                />
-              <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.last_step ?? ''} onChange={(e) => setForm({ ...form, last_step: (e.target.value || null) as any })}>
-                <option value="">Last step…</option>
-                {STEPS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <input type="date" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.last_step_date ?? ''} onChange={(e) => setForm({ ...form, last_step_date: e.target.value || null })}/>
-              <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.next_step ?? ''} onChange={(e) => setForm({ ...form, next_step: (e.target.value || null) as any })}>
-                <option value="">Next step…</option>
-                {NEXT_STEPS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+          <label className="form-field md:col-span-2">
+            <span className="form-label">How do you know them?</span>
+            <input className="form-input" value={form.how_known} onChange={(e) => setForm({ ...form, how_known: e.target.value })} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">Where do they live?</span>
+            <input className="form-input" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
+          </label>
 
-              <input type="date" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.due_date ?? ''} onChange={(e) => setForm({ ...form, due_date: e.target.value || null })}/>
-              <textarea className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2 md:col-span-3" rows={4} placeholder="Additional notes" value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })}/>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button className="btn bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700" onClick={() => setShowForm(false)}>Cancel</button>
-              <button className="btn bg-sky-600 text-white" onClick={save}>{editingId ? 'Save Changes' : 'Create Prospect'}</button>
-            </div>
-          </div>
+          <label className="form-field">
+            <span className="form-label">Relationship status</span>
+            <select className="form-input" value={form.relationship_status ?? 'unknown'} onChange={(e) => setForm({ ...form, relationship_status: e.target.value as any })}>
+              {['single','dating','engaged','married','single_with_kids','married_with_kids','unknown'].map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-label">Date of connection</span>
+            <input type="date" className="form-input" value={form.date_of_connection ?? ''} onChange={(e) => setForm({ ...form, date_of_connection: e.target.value || null })} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">Looking?</span>
+            <select className="form-input" value={form.looking ?? 'pending'} onChange={(e) => setForm({ ...form, looking: e.target.value as any })}>
+              {['looker','non-looker','leaner','no_ones_home','curious','pending'].map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+            </select>
+          </label>
+
+          <label className="form-field">
+            <span className="form-label">Last step</span>
+            <select className="form-input" value={form.last_step ?? ''} onChange={(e) => setForm({ ...form, last_step: (e.target.value || null) as any })}>
+              <option value="">—</option>
+              {['Phone Call','PQI','QI1','QI2','1st Look','Follow Up 1','2nd Look','Follow Up 2','3rd Look','Follow Up 3','GSM'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-label">Last step date</span>
+            <input type="date" className="form-input" value={form.last_step_date ?? ''} onChange={(e) => setForm({ ...form, last_step_date: e.target.value || null })} />
+          </label>
+          <label className="form-field">
+            <span className="form-label">Next step</span>
+            <select className="form-input" value={form.next_step ?? ''} onChange={(e) => setForm({ ...form, next_step: (e.target.value || null) as any })}>
+              <option value="">—</option>
+              {['Phone Call','PQI','QI1','QI2','1st Look','Follow Up 1','2nd Look','Follow Up 2','3rd Look','Follow Up 3','GSM','Transition to Customer'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+
+          <label className="form-field">
+            <span className="form-label">Due date</span>
+            <input type="date" className="form-input" value={form.due_date ?? ''} onChange={(e) => setForm({ ...form, due_date: e.target.value || null })} />
+          </label>
+          <label className="form-field md:col-span-3">
+            <span className="form-label">Additional notes</span>
+            <textarea rows={4} className="form-input" value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </label>
         </div>
-      )}
+      </div>
+
+      <div className="flex justify-end gap-2 px-6 pb-6">
+        <button className="rounded-xl px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700" onClick={() => setShowForm(false)}>Cancel</button>
+        <button className="rounded-xl px-4 py-2 bg-sky-600 text-white" onClick={save}>{editingId ? 'Save Changes' : 'Create Prospect'}</button>
+      </div>
+    </div>
+  </div>
+)}
     </Page>
   );
 }
