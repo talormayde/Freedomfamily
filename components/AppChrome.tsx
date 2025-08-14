@@ -19,14 +19,12 @@ export default function AppChrome({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // While checking session, avoid flicker
   if (hasSession === null) return <div className="min-h-screen" />;
 
   const hideChrome = pathname === '/' && !hasSession;
 
   return (
     <div className="mx-auto max-w-6xl px-4">
-      {/* header */}
       {!hideChrome && (
         <header className="sticky top-0 z-40 backdrop-blur bg-white/60 dark:bg-zinc-900/60 border-b border-zinc-200/60 dark:border-zinc-800/70">
           <div className="mx-auto max-w-6xl px-2 sm:px-4 h-14 flex items-center justify-between">
@@ -47,7 +45,6 @@ export default function AppChrome({ children }: { children: ReactNode }) {
         </header>
       )}
 
-      {/* grid */}
       <div className={`grid grid-cols-1 ${!hideChrome ? 'md:grid-cols-[240px_minmax(0,1fr)] gap-6 md:gap-8 py-6 md:py-10' : ''}`}>
         {!hideChrome && (
           <aside className="hidden md:block">
@@ -59,11 +56,9 @@ export default function AppChrome({ children }: { children: ReactNode }) {
             </div>
           </aside>
         )}
-
         <main className="min-w-0">{children}</main>
       </div>
 
-      {/* bottom nav (mobile) */}
       {!hideChrome && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200/70 dark:border-zinc-800/70 bg-white/90 dark:bg-zinc-900/80 backdrop-blur">
           <div className="mx-auto max-w-xl grid grid-cols-5 p-2 gap-2 text-xs">
