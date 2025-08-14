@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { Card, Page } from '@/components/ui';
+import { Pencil, Trash2 } from 'lucide-react';
 
 type Prospect = {
   id: string;
@@ -470,22 +471,16 @@ export default function ListBuilderPage() {
                 <td>{p.next_step}</td>
                 <td>{p.due_date ?? ''}</td>
                 <td className="text-zinc-600 dark:text-zinc-300">{p.location}</td>
-                <td className="text-right">
-                  <div className="inline-flex gap-2">
-                    <button
-                      onClick={() => openEdit(p)}
-                      className="btn bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-3 py-1.5 text-xs"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => remove(p.id)}
-                      className="btn bg-rose-600 text-white px-3 py-1.5 text-xs"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
+								<td className="text-right">
+  									<div className="inline-flex gap-2">
+    									<button onClick={() => openEdit(p)} className="btn-icon btn-ghost" title="Edit" aria-label="Edit">
+      									<Pencil className="w-4 h-4" />
+    									</button>
+    									<button onClick={() => remove(p.id)} className="btn-icon btn-danger" title="Delete" aria-label="Delete">
+      									<Trash2 className="w-4 h-4" />
+    									</button>
+  									</div>
+								</td>
               </tr>
             ))}
             {filtered.length === 0 && (
