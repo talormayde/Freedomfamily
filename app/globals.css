@@ -80,3 +80,9 @@ html, body { height: 100%; }
 .form-field { @apply space-y-1; }
 .form-label { @apply text-xs font-semibold uppercase tracking-wide opacity-70; }
 .form-input { @apply w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2; }
+
+
+/* Prevent decorative overlays from blocking clicks */
+.pointer-events-none {
+  pointer-events: none !important;
+}
