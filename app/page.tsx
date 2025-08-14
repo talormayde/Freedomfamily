@@ -91,7 +91,8 @@ export default function HomePage() {
 
           {/* Tiles — 2 cols on mobile / 4 on desktop */}
           <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <button className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-lime-200 to-lime-300 text-zinc-800 font-semibold">Study</button>
+
+						<a href="/study/list-builder" className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-lime-200 to-lime-300 text-zinc-800 font-semibold grid place-items-center">Study</a>
             <button className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-amber-200 to-amber-300 text-zinc-800 font-semibold">Library</button>
             <button className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-rose-200 to-rose-300 text-zinc-800 font-semibold">Living</button>
             <button className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-fuchsia-200 to-fuchsia-300 text-zinc-800 font-semibold">Kitchen</button>
