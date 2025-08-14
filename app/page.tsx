@@ -1,4 +1,3 @@
-// app/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
@@ -14,7 +13,7 @@ export default function HomePage() {
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
-      // keep UI in sync immediately after login
+      // keep the UI in sync right after auth
       const { data: sub } = supa.auth.onAuthStateChange((_e, sess) => {
         if (mounted) setAuthed(!!sess);
       });
@@ -25,16 +24,15 @@ export default function HomePage() {
 
   return (
     <div className="px-4 md:px-6 lg:px-8 max-w-[1200px] mx-auto w-full">
-      {/* Glass hero (only when not authed) */}
       {!authed && (
         <div
           className="relative overflow-hidden rounded-3xl p-6 md:p-10 mt-6 md:mt-10"
           style={{ background: 'linear-gradient(135deg, rgba(180,245,200,.55), rgba(180,220,255,.55))' }}
         >
-          {/* blur layer must not eat clicks */}
-          <div className="absolute inset-0 backdrop-blur-md pointer-events-none" aria-hidden="true" />
-          {/* content layer */}
-          <div className="relative z-10 pointer-events-auto grid md:grid-cols-2 gap-8 items-center">
+          {/* The crucial fix: don't eat clicks */}
+          <div className="absolute inset-0 backdrop-blur-md pointer-events-none" />
+
+          <div className="relative grid md:grid-cols-2 gap-8 items-center">
             <div>
               <div className="w-12 h-12 rounded-2xl bg-white/70 grid place-items-center shadow-sm mb-4">🔑</div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Welcome to the House</h1>
@@ -50,7 +48,7 @@ export default function HomePage() {
               </ul>
             </div>
 
-            {/* Key form */}
+            {/* Login card stays the same */}
             <div className="rounded-2xl bg-white/80 p-4 sm:p-6 shadow-xl">
               <h2 className="font-semibold text-lg">I already have a key</h2>
               <p className="text-sm text-zinc-600">Enter your email to receive your one-time key.</p>
@@ -69,20 +67,14 @@ export default function HomePage() {
                   required
                   placeholder="you@domain.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e)=>setEmail(e.target.value)}
                   className="w-full rounded-xl border border-zinc-200 px-3 py-2 outline-none focus:ring-2 focus:ring-sky-300"
                 />
                 <div className="flex gap-3">
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-xl bg-sky-600 text-white font-medium px-4 py-2 hover:bg-sky-700"
-                  >
+                  <button className="inline-flex items-center justify-center rounded-xl bg-sky-600 text-white font-medium px-4 py-2 hover:bg-sky-700">
                     Send My Key
                   </button>
-                  <Link
-                    href="/about-key"
-                    className="inline-flex items-center justify-center rounded-xl bg-amber-500/90 text-white font-medium px-4 py-2 hover:bg-amber-600"
-                  >
+                  <Link href="/about-key" className="inline-flex items-center justify-center rounded-xl bg-amber-500/90 text-white font-medium px-4 py-2 hover:bg-amber-600">
                     I Need a Key
                   </Link>
                 </div>
@@ -93,31 +85,25 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Rooms grid — NOW only visible when authed (prevents “see everything” before login) */}
-      {authed && (
-        <div className="grid md:grid-cols-2 gap-6 mt-8">
-          <Link href="/office" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
-            <div className="font-semibold text-lg">Office</div>
-            <div className="text-sm text-zinc-600">CRM, Calendar, KPIs</div>
-          </Link>
-          <Link href="/library" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
-            <div className="font-semibold text-lg">Library</div>
-            <div className="text-sm text-zinc-600">Trainings & Media</div>
-          </Link>
-          <Link href="/living" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
-            <div className="font-semibold text-lg">Living Room</div>
-            <div className="text-sm text-zinc-600">Community</div>
-          </Link>
-          <Link href="/kitchen" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
-            <div className="font-semibold text-lg">Kitchen</div>
-            <div className="text-sm text-zinc-600">Resources & Tools</div>
-          </Link>
-          <Link href="/calendar" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
-            <div className="font-semibold text-lg">Calendar</div>
-            <div className="text-sm text-zinc-600">Month / Week / Day</div>
-          </Link>
-        </div>
-      )}
+      {/* Rooms grid — visible always (glass-house glimpse). Make sure they sit above any stray layer */}
+      <div className="grid md:grid-cols-2 gap-6 mt-8 relative z-10">
+        <Link href="/office" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition relative z-10">
+          <div className="font-semibold text-lg">Office</div>
+          <div className="text-sm text-zinc-600">CRM, Calendar, KPIs</div>
+        </Link>
+        <Link href="/library" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition relative z-10">
+          <div className="font-semibold text-lg">Library</div>
+          <div className="text-sm text-zinc-600">Trainings & Media</div>
+        </Link>
+        <Link href="/living" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition relative z-10">
+          <div className="font-semibold text-lg">Living Room</div>
+          <div className="text-sm text-zinc-600">Community</div>
+        </Link>
+        <Link href="/kitchen" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition relative z-10">
+          <div className="font-semibold text-lg">Kitchen</div>
+          <div className="text-sm text-zinc-600">Resources & Tools</div>
+        </Link>
+      </div>
     </div>
   );
 }
