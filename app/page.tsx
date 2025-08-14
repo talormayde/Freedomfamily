@@ -14,7 +14,6 @@ export default function HomePage() {
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
-      // listen for changes so the hero disappears right after login
       const { data: sub } = supa.auth.onAuthStateChange((_e, sess) => {
         if (mounted) setAuthed(!!sess);
       });
@@ -30,10 +29,11 @@ export default function HomePage() {
           className="relative overflow-hidden rounded-3xl p-6 md:p-10 mt-6 md:mt-10"
           style={{ background: 'linear-gradient(135deg, rgba(180,245,200,.55), rgba(180,220,255,.55))' }}
         >
-          {/* glass blur background should NOT capture clicks */}
+          {/* This blur is DECORATIVE ONLY */}
           <div className="absolute inset-0 backdrop-blur-md pointer-events-none" />
-          {/* content is above the blur */}
-          <div className="relative z-10 grid md:grid-cols-2 gap-8 items-center">
+
+          {/* Actual content sits ABOVE the blur and is clickable */}
+          <div className="relative z-10 grid md:grid-cols-2 gap-8 items-center pointer-events-auto">
             <div>
               <div className="w-12 h-12 rounded-2xl bg-white/70 grid place-items-center shadow-sm mb-4">🔑</div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Welcome to the House</h1>
@@ -92,7 +92,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Rooms grid — show ONLY when authed */}
+      {/* Rooms grid — ONLY after auth */}
       {authed && (
         <div className="grid md:grid-cols-2 gap-6 mt-8">
           <Link href="/office" className="block rounded-2xl bg-white/80 p-5 shadow-sm hover:shadow-md transition">
