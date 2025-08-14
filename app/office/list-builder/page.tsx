@@ -518,14 +518,11 @@ export default function ListBuilderPage() {
               <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2 md:col-span-2" placeholder="How do you know them?" value={form.how_known} onChange={(e) => setForm({ ...form, how_known: e.target.value })}/>
               <input className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" placeholder="Where do they live?" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}/>
 
-              <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.relationship_status} onChange={(e) => setForm({ ...form, relationship_status: e.target.value as any })}>
-                {REL_OPTIONS.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+              <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.relationship_status ?? 'unknown'} onChange={(e) => setForm({ ...form, relationship_status: e.target.value as any })}>
+                {REL_OPTIONS.map((s) => (<option key={s} value={s}> {s.replace(/_/g, ' ')} </option>))}
               </select>
-              <input type="date" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.date_of_connection ?? ''} onChange={(e) => setForm({ ...form, date_of_connection: e.target.value || null })}/>
-              <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.looking ?? 'pending'} onChange={(e) => setForm({ ...form, looking: e.target.value as any })}>
-                {LOOKING.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-              </select>
-
+              <input type="date" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.date_of_connection ?? ''} onChange={(e) => setForm({ ...form, date_of_connection: e.target.value || null })}
+                />
               <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2" value={form.last_step ?? ''} onChange={(e) => setForm({ ...form, last_step: (e.target.value || null) as any })}>
                 <option value="">Last step…</option>
                 {STEPS.map((s) => <option key={s} value={s}>{s}</option>)}
