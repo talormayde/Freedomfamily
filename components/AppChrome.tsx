@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import ThemeToggle from '@/components/ThemeToggle'; // keep your existing component
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const supa = supabaseBrowser();
@@ -15,9 +15,19 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
-      supa.auth.onAuthStateChange((_e, sess) => mounted && setAuthed(!!sess));
+
+      // IMPORTANT: do not return a boolean from the callback; use a block
+      const { data: sub } = supa.auth.onAuthStateChange((_e, sess) => {
+        if (mounted) setAuthed(!!sess);
+      });
+
+      // cleanup
+      return () => {
+        mounted = false;
+        sub.subscription.unsubscribe();
+      };
     })();
-    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
