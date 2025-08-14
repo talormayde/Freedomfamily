@@ -175,9 +175,9 @@ export default function HomePage() {
             <a href="/kitchen" className="aspect-square w-full rounded-[28px] bg-gradient-to-b from-fuchsia-200 to-fuchsia-300 text-zinc-800 font-semibold grid place-items-center">
               Kitchen
             </a>
-            <button className="col-span-2 lg:col-span-4 h-28 rounded-[28px] grid place-items-center bg-sky-100 dark:bg-zinc-900 text-sky-800 dark:text-sky-200 font-semibold">
+            <a href="/calendar" className="col-span-2 lg:col-span-4 h-28 rounded-[28px] grid place-items-center bg-sky-100 dark:bg-zinc-900 text-sky-800 dark:text-sky-200 font-semibold">
               <Calendar className="w-5 h-5" /> Calendar
-            </button>
+            </a>
           </div>
         </Page>
       )}
