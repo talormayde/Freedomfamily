@@ -1,10 +1,9 @@
 import type { Metadata } from 'next';
-import { supabaseServer } from '@/lib/supabase-server';
 import Link from 'next/link';
+import { supabaseServer } from '@/lib/supabase-server';
+import EmailKeyForm from '@/components/EmailKeyForm';
 
-export const metadata: Metadata = {
-  title: 'Freedom Family — Home',
-};
+export const metadata: Metadata = { title: 'Freedom Family — Home' };
 
 export default async function HomePage() {
   const supa = supabaseServer();
@@ -12,36 +11,21 @@ export default async function HomePage() {
   const authed = !!session;
 
   if (authed) {
-    // Show the rooms right away (no login panel)
     return (
       <div className="w-full">
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          <Link href="/office" className="rounded-3xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 hover:bg-white">
-            <div className="text-xl font-semibold">Office</div>
-            <div className="mt-1 text-sm opacity-80">CRM, Calendar, KPIs</div>
-          </Link>
-          <Link href="/calendar" className="rounded-3xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 hover:bg-white">
-            <div className="text-xl font-semibold">Calendar</div>
-            <div className="mt-1 text-sm opacity-80">Daily • Weekly • Monthly</div>
-          </Link>
-          <Link href="/library" className="rounded-3xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 hover:bg-white">
-            <div className="text-xl font-semibold">Library</div>
-            <div className="mt-1 text-sm opacity-80">Trainings & media</div>
-          </Link>
-          <Link href="/living" className="rounded-3xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 hover:bg-white">
-            <div className="text-xl font-semibold">Living Room</div>
-            <div className="mt-1 text-sm opacity-80">Community</div>
-          </Link>
+          <Tile href="/office" title="Office" subtitle="CRM, Calendar, KPIs" />
+          <Tile href="/calendar" title="Calendar" subtitle="Daily • Weekly • Monthly" />
+          <Tile href="/library" title="Library" subtitle="Trainings & media" />
+          <Tile href="/living" title="Living Room" subtitle="Community" />
         </div>
       </div>
     );
   }
 
-  // Not authed → “glass door” hero + key request
   return (
     <div className="w-full">
       <section className="relative overflow-hidden rounded-3xl bg-white/70 dark:bg-zinc-900/60 shadow-xl ring-1 ring-black/5 dark:ring-white/10 p-6 sm:p-10">
-        {/* subtle blurred house shapes */}
         <div className="pointer-events-none absolute inset-0 -z-10">
           <div className="absolute -top-10 left-6 h-40 w-72 rounded-3xl bg-sky-200/40 blur-2xl" />
           <div className="absolute top-10 right-10 h-40 w-80 rounded-3xl bg-teal-200/40 blur-2xl" />
@@ -63,38 +47,19 @@ export default async function HomePage() {
             </ul>
           </div>
 
-          <KeyPanel />
+          {/* client-side form that sends the key without navigation */}
+          <EmailKeyForm />
         </div>
       </section>
     </div>
   );
 }
 
-function KeyPanel() {
+function Tile({ href, title, subtitle }: { href: string; title: string; subtitle: string }) {
   return (
-    <form
-      action="/api/auth/send-key"
-      method="post"
-      className="rounded-3xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 ring-1 ring-black/5 dark:ring-white/10"
-    >
-      <div className="text-xl font-semibold mb-2">I already have a key</div>
-      <label className="block text-sm opacity-80 mb-1">Email</label>
-      <input
-        name="email"
-        type="email"
-        required
-        placeholder="you@domain.com"
-        className="w-full rounded-xl border border-zinc-300/70 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900 px-3 py-2 mb-3"
-      />
-      <div className="flex gap-3">
-        <button className="rounded-xl bg-sky-600 text-white px-4 py-2 font-medium hover:bg-sky-700">Send My Key</button>
-        <Link href="/request-access" className="rounded-xl bg-amber-400 text-zinc-900 px-4 py-2 font-medium hover:bg-amber-500">
-          I Need a Key
-        </Link>
-      </div>
-      <p className="mt-3 text-xs opacity-70">
-        We’ll email you a one-time sign-in key. No passwords.
-      </p>
-    </form>
+    <Link href={href} className="rounded-3xl bg-white/80 dark:bg-zinc-900/70 shadow p-6 hover:bg-white">
+      <div className="text-xl font-semibold">{title}</div>
+      <div className="mt-1 text-sm opacity-80">{subtitle}</div>
+    </Link>
   );
 }
