@@ -3,7 +3,6 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { ReactNode } from 'react';
 import AppChrome from '@/components/AppChrome';
-import { ThemeProvider } from 'next-themes';
 
 export const metadata: Metadata = {
   title: 'Freedom Family Hub',
@@ -24,9 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className="h-full">
       <body className="min-h-screen text-zinc-900 dark:text-zinc-100 antialiased">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <AppChrome>{children}</AppChrome>
-        </ThemeProvider>
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   );
