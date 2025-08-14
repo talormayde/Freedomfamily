@@ -63,22 +63,25 @@ export default function ListBuilderPage() {
     };
     boot();
 
-    const { data: sub } = supa
-      .channel('prospects-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'prospects' },
-        (_) => {
-          // simple refetch on change
-          supa.from('prospects').select('*').order('created_at', { ascending: false })
-            .then(({ data }) => setProspects((data ?? []) as Prospect[]));
-        }
-      )
-      .subscribe();
+    const channel = supa
+  .channel('prospects-realtime')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'prospects' },
+    () => {
+      // simple refetch on any change
+      supa
+        .from('prospects')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .then(({ data }) => setProspects((data ?? []) as Prospect[]));
+    }
+  )
+  .subscribe();
 
-    return () => {
-      supa.removeChannel(sub);
-    };
+return () => {
+  supa.removeChannel(channel);
+};
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
