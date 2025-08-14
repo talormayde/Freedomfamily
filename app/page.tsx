@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import Link from 'next/link';
 
+console.log('FF build marker v1');
+
 export default function HomePage() {
   const [authed, setAuthed] = useState<boolean>(false);
   const [email, setEmail] = useState('');
