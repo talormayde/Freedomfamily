@@ -18,7 +18,7 @@ export default function OfficeHome() {
         </Card>
 
         <Card>
-          <div className="flex items-center justify-between opacity-70">
+          <div className="flex items-center justify-between opacity-90">
             <div>
               <h3 className="text-lg font-semibold">KPI Tracker</h3>
               <p className="text-sm text-zinc-600 dark:text-zinc-300">Daily QIs, STPs, Guests, PV — coming soon.</p>
