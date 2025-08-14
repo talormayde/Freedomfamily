@@ -35,42 +35,13 @@ type Prospect = {
   created_at: string;
 };
 
-// Option sets (single source of truth)
+// Options
 const LIST_OPTIONS = ['A', 'B', 'C'] as const;
-const REL = [
-  'single',
-  'dating',
-  'engaged',
-  'married',
-  'single_with_kids',
-  'married_with_kids',
-  'unknown',
-] as const;
-const LOOK = ['looker', 'non-looker', 'learner', 'no_ones_home', 'curious', 'pending'] as const;
-const STEPS = [
-  'Phone Call',
-  'PQI',
-  'QI1',
-  'QI2',
-  '1st Look',
-  'Follow Up 1',
-  '2nd Look',
-  'Follow Up 2',
-  '3rd Look',
-  'Follow Up 3',
-  'GSM',
-  'Transition to Customer',
-] as const;
+const REL = ['single','dating','engaged','married','single_with_kids','married_with_kids','unknown'] as const;
+const LOOK = ['looker','non-looker','learner','no_ones_home','curious','pending'] as const;
+const STEPS = ['Phone Call','PQI','QI1','QI2','1st Look','Follow Up 1','2nd Look','Follow Up 2','3rd Look','Follow Up 3','GSM','Transition to Customer'] as const;
 
-type FilterField =
-  | 'list'
-  | 'relationship_status'
-  | 'looking'
-  | 'last_step'
-  | 'next_step'
-  | 'location'
-  | 'age';
-
+type FilterField = 'list' | 'relationship_status' | 'looking' | 'last_step' | 'next_step' | 'location' | 'age';
 type DueFilter = 'Any' | 'Overdue' | 'Today' | 'Upcoming';
 
 export default function ListBuilder() {
@@ -80,16 +51,21 @@ export default function ListBuilder() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // New unified filter UI state
-  const [filter, setFilter] = useState<{ field: FilterField; value: string }>({
-    field: 'list',
-    value: '',
-  });
+  // Unified filters
+  const [filter, setFilter] = useState<{ field: FilterField; value: string }>({ field: 'list', value: '' });
   const [search, setSearch] = useState('');
   const [due, setDue] = useState<DueFilter>('Any');
 
-  // Modal/editing placeholder (wire to your existing modal if you have one)
-  const [editing, setEditing] = useState<Prospect | null>(null);
+  // Optional: support deep link from calendar (?prospect=uuid)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const pid = url.searchParams.get('prospect');
+    if (pid) {
+      // make it easy to find that prospect
+      setSearch(pid);
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -99,67 +75,57 @@ export default function ListBuilder() {
         .from('prospects')
         .select('*')
         .order('created_at', { ascending: false });
-      if (error) {
-        setErrorMsg(error.message);
-      } else {
-        setRows((data || []) as Prospect[]);
-      }
+      if (error) setErrorMsg(error.message);
+      else setRows((data || []) as Prospect[]);
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
-    const todayDateOnly = new Date(new Date().toDateString());
+    const todayStart = new Date(new Date().toDateString());
     const toDate = (s?: string | null) => (s ? new Date(`${s}T00:00:00`) : null);
 
     return rows.filter((r) => {
-      // Search across name/phone/email
+      // Search: name / phone / email / id (helpful for deep links)
       const matchQ =
         !search ||
-        [r.first_name ?? '', r.last_name ?? '', r.phone ?? '', r.email ?? '']
+        [r.id, r.first_name ?? '', r.last_name ?? '', r.phone ?? '', r.email ?? '']
           .join(' ')
           .toLowerCase()
           .includes(search.toLowerCase());
 
-      // Field + value filter
+      // Field/value
       let matchField = true;
       if (filter.value.trim() !== '') {
         switch (filter.field) {
           case 'list':
-            matchField = (r.list ?? '') === filter.value;
-            break;
+            matchField = (r.list ?? '') === filter.value; break;
           case 'relationship_status':
-            matchField = (r.relationship_status ?? 'unknown') === filter.value;
-            break;
+            matchField = (r.relationship_status ?? 'unknown') === filter.value; break;
           case 'looking':
-            matchField = (r.looking ?? '') === filter.value;
-            break;
+            matchField = (r.looking ?? '') === filter.value; break;
           case 'last_step':
-            matchField = (r.last_step ?? '') === filter.value;
-            break;
+            matchField = (r.last_step ?? '') === filter.value; break;
           case 'next_step':
-            matchField = (r.next_step ?? '') === filter.value;
-            break;
+            matchField = (r.next_step ?? '') === filter.value; break;
           case 'location':
-            matchField = (r.location ?? '').toLowerCase().includes(filter.value.toLowerCase());
-            break;
+            matchField = (r.location ?? '').toLowerCase().includes(filter.value.toLowerCase()); break;
           case 'age':
-            matchField = String(r.age ?? '').trim() === filter.value.trim();
-            break;
+            matchField = String(r.age ?? '').trim() === filter.value.trim(); break;
         }
       }
 
-      // Due filter (by due_date)
+      // Due
       let matchDue = true;
       if (due !== 'Any') {
         const d = toDate(r.due_date);
-        if (!d) {
-          matchDue = false;
-        } else {
-          if (due === 'Today') matchDue = d.getTime() === todayDateOnly.getTime();
-          if (due === 'Overdue') matchDue = d.getTime() < todayDateOnly.getTime();
-          if (due === 'Upcoming') matchDue = d.getTime() > todayDateOnly.getTime();
+        if (!d) matchDue = false;
+        else {
+          const cmp = d.getTime() - todayStart.getTime();
+          if (due === 'Today') matchDue = cmp === 0;
+          if (due === 'Overdue') matchDue = cmp < 0;
+          if (due === 'Upcoming') matchDue = cmp > 0;
         }
       }
 
@@ -170,156 +136,127 @@ export default function ListBuilder() {
   async function remove(id: string) {
     if (!confirm('Delete this prospect?')) return;
     const { error } = await supa.from('prospects').delete().eq('id', id);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    setRows((prev) => prev.filter((r) => r.id !== id));
+    if (error) return alert(error.message);
+    setRows(prev => prev.filter(r => r.id !== id));
   }
 
   const fmtDate = (s?: string | null) => {
     if (!s) return '';
-    // Render like "Aug 16, 2025"
     const d = new Date(`${s}T00:00:00`);
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  // Compute the option set for the "Value" control depending on field
   const valueOptions: string[] | null = useMemo(() => {
     switch (filter.field) {
-      case 'list':
-        return [...LIST_OPTIONS];
-      case 'relationship_status':
-        return [...REL];
-      case 'looking':
-        return [...LOOK];
+      case 'list': return [...LIST_OPTIONS];
+      case 'relationship_status': return [...REL];
+      case 'looking': return [...LOOK];
       case 'last_step':
-      case 'next_step':
-        return [...STEPS];
-      default:
-        return null; // free text input (location, age)
+      case 'next_step': return [...STEPS];
+      default: return null;
     }
   }, [filter.field]);
 
   return (
     <div className="px-4 md:px-6 lg:px-8 max-w-[1700px] mx-auto w-full">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3 mt-6">
         <h1 className="text-3xl font-semibold tracking-tight">List Builder</h1>
         <button
-          onClick={() => setEditing({} as Prospect)}
+          onClick={() => alert('Hook your Add Prospect modal here (uses Supabase insert into prospects).')}
           className="rounded-xl bg-sky-600 text-white font-medium px-4 py-2 hover:bg-sky-700"
         >
           + Add Prospect
         </button>
       </div>
 
-      {/* Info / Error */}
       {errorMsg && (
-        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3">
-          {errorMsg}
-        </div>
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3">{errorMsg}</div>
       )}
 
-      {/* Filter Bar (brand-aligned, labeled) */}
+      {/* Filter Bar */}
       <div className="mt-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/50 p-3 sm:p-4">
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-    {/* Field */}
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-        Select field
-      </span>
-      <select
-        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-        value={filter.field}
-        onChange={(e) => setFilter({ field: e.target.value as any, value: '' })}
-      >
-        <option value="list">List</option>
-        <option value="relationship_status">Relationship status</option>
-        <option value="looking">Looking</option>
-        <option value="last_step">Last step</option>
-        <option value="next_step">Next step</option>
-        <option value="location">Location</option>
-        <option value="age">Age</option>
-      </select>
-    </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {/* Field */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Select field</span>
+            <select
+              className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
+              value={filter.field}
+              onChange={(e) => setFilter({ field: e.target.value as FilterField, value: '' })}
+            >
+              <option value="list">List</option>
+              <option value="relationship_status">Relationship status</option>
+              <option value="looking">Looking</option>
+              <option value="last_step">Last step</option>
+              <option value="next_step">Next step</option>
+              <option value="location">Location</option>
+              <option value="age">Age</option>
+            </select>
+          </label>
 
-    {/* Value */}
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-        Select option
-      </span>
-      {valueOptions ? (
-        <select
-          className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-          value={filter.value}
-          onChange={(e) => setFilter({ ...filter, value: e.target.value })}
-        >
-          <option value="">— Select —</option>
-          {valueOptions.map((o) => (
-            <option key={o} value={o}>
-              {o.replace(/_/g, ' ')}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-          placeholder={filter.field === 'age' ? 'Type age (e.g., 27)' : 'Type a value…'}
-          value={filter.value}
-          onChange={(e) => setFilter({ ...filter, value: e.target.value })}
-        />
-      )}
-    </label>
+          {/* Value */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Select option</span>
+            {valueOptions ? (
+              <select
+                className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
+                value={filter.value}
+                onChange={(e) => setFilter({ ...filter, value: e.target.value })}
+              >
+                <option value="">— Select —</option>
+                {valueOptions.map(o => (
+                  <option key={o} value={o}>{o.replace(/_/g,' ')}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
+                placeholder={filter.field === 'age' ? 'Type age (e.g., 27)' : 'Type a value…'}
+                value={filter.value}
+                onChange={(e) => setFilter({ ...filter, value: e.target.value })}
+              />
+            )}
+          </label>
 
-    {/* Search */}
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-        Search (name / phone / email)
-      </span>
-      <input
-        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-        placeholder="Start typing…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-    </label>
+          {/* Search */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Search (name / phone / email)</span>
+            <input
+              className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
+              placeholder="Start typing…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
 
-    {/* Due */}
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-        Due
-      </span>
-      <select
-        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-        value={due}
-        onChange={(e) => setDue(e.target.value as any)}
-      >
-        <option>Any</option>
-        <option>Overdue</option>
-        <option>Today</option>
-        <option>Upcoming</option>
-      </select>
-    </label>
+          {/* Due */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Due</span>
+            <select
+              className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
+              value={due}
+              onChange={(e) => setDue(e.target.value as DueFilter)}
+            >
+              <option>Any</option>
+              <option>Overdue</option>
+              <option>Today</option>
+              <option>Upcoming</option>
+            </select>
+          </label>
 
-    {/* Actions */}
-    <div className="flex items-end gap-2">
-      <button
-        className="w-full rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700"
-        // reactive filters apply automatically — button kept for UX affordance
-        onClick={() => {}}
-      >
-        Apply
-      </button>
-      <button
-        onClick={() => { setFilter({ field: 'list', value: '' }); setSearch(''); setDue('Any'); }}
-        className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2"
-      >
-        Reset
-      </button>
-    </div>
-  </div>
-</div>
+          {/* Actions (affordance only; filters are reactive) */}
+          <div className="flex items-end gap-2">
+            <button className="w-full rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700">Apply</button>
+            <button
+              onClick={() => { setFilter({ field: 'list', value: '' }); setSearch(''); setDue('Any'); }}
+              className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/50">
         {loading ? (
@@ -361,28 +298,16 @@ export default function ListBuilder() {
                     <td className="px-3 py-2">{r.next_step ?? '—'}</td>
                     <td className="px-3 py-2">{fmtDate(r.due_date) || '—'}</td>
                     <td className="px-3 py-2">
-                      {r.phone ? (
-                        <a className="hover:underline" href={`tel:${r.phone}`}>
-                          {r.phone}
-                        </a>
-                      ) : (
-                        '—'
-                      )}
+                      {r.phone ? <a className="hover:underline" href={`tel:${r.phone}`}>{r.phone}</a> : '—'}
                     </td>
                     <td className="px-3 py-2">
-                      {r.email ? (
-                        <a className="hover:underline" href={`mailto:${r.email}`}>
-                          {r.email}
-                        </a>
-                      ) : (
-                        '—'
-                      )}
+                      {r.email ? <a className="hover:underline" href={`mailto:${r.email}`}>{r.email}</a> : '—'}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <button
                           title="Edit"
-                          onClick={() => setEditing(r)}
+                          onClick={() => alert('Hook your Edit Prospect modal here (use setEditing).')}
                           className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900"
                         >
                           <Pencil className="h-4 w-4" />
@@ -403,11 +328,6 @@ export default function ListBuilder() {
           </table>
         )}
       </div>
-
-      {/* TODO: hook your existing Add/Edit modal to `editing` state */}
-      {/* Example:
-          {editing && <ProspectModal value={editing} onClose={()=>setEditing(null)} onSaved={(newRow)=>{...}} />}
-      */}
     </div>
   );
 }
