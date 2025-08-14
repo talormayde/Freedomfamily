@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { Sun } from 'lucide-react';
+import ThemeToggle from '@/components/ThemeToggle'; // <-- use your existing toggle
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const supa = supabaseBrowser();
@@ -14,14 +14,14 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
       if (mounted) setAuthed(!!session);
-      supa.auth.onAuthStateChange((_e, sess) => setAuthed(!!sess));
+      const { data: sub } = supa.auth.onAuthStateChange((_e, sess) => {
+        if (mounted) setAuthed(!!sess);
+      });
+      return () => sub.subscription.unsubscribe();
     })();
     return () => { mounted = false; };
   }, []);
 
-  // Wrapper width rules:
-  // - mobile: full bleed with padding
-  // - md+: sidebar (220px) + content that expands up to 1600px
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-teal-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-900 dark:text-zinc-100">
       {/* Top bar (hidden until authed) */}
@@ -32,11 +32,10 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
             <nav className="hidden sm:flex items-center gap-6 text-sm">
               <Link href="/office" className="hover:opacity-70">Office</Link>
               <Link href="/library" className="hover:opacity-70">Library</Link>
+              <Link href="/calendar" className="hover:opacity-70">Calendar</Link> {/* NEW */}
               <Link href="/living" className="hover:opacity-70">Living</Link>
               <Link href="/kitchen" className="hover:opacity-70">Kitchen</Link>
-              <button className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10" aria-label="Theme">
-                <Sun className="w-4 h-4" />
-              </button>
+              <ThemeToggle /> {/* replace Sun icon button */}
             </nav>
           </div>
         </header>
@@ -58,6 +57,11 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
                     <span>📚</span> <span>Library</span>
                   </span>
                 </Link>
+                <Link href="/calendar" className="block rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow-sm px-4 py-3 hover:bg-white">
+                  <span className="inline-flex items-center gap-2">
+                    <span>🗓️</span> <span>Calendar</span>
+                  </span>
+                </Link>
                 <Link href="/living" className="block rounded-2xl bg-white/80 dark:bg-zinc-900/70 shadow-sm px-4 py-3 hover:bg-white">
                   <span className="inline-flex items-center gap-2">
                     <span>💬</span> <span>Living Room</span>
@@ -74,7 +78,6 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
 
           {/* Content */}
           <main className="px-4 sm:px-6 lg:px-8 py-6">
-            {/* full-width container that uses space (no artificial centering) */}
             <div className="min-h-[70vh]">{children}</div>
           </main>
         </div>
