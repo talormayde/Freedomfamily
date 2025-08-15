@@ -4,20 +4,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { Pencil, Trash2, Plus } from 'lucide-react';
-import SoftGuardBanner from '@/components/SoftGuardBanner';
-
-export default function CalendarPage() {
-  return (
-    <div className="px-4 md:px-6 lg:px-8 max-w-[1700px] mx-auto w-full">
-      <SoftGuardBanner />
- 
+import Link from 'next/link';
 
 type EventRow = {
   id: string;
   title: string | null;
   description: string | null;
-  start_at: string; // ISO string
-  end_at: string | null; // ISO string
+  start_at: string;      // ISO
+  end_at: string | null; // ISO
   location: string | null;
   prospect_id: string | null;
   created_at: string;
@@ -27,14 +21,39 @@ type ViewMode = 'Month' | 'Week' | 'Day';
 
 export default function CalendarPage() {
   const supa = supabaseBrowser();
+
+  // auth soft-gate (mirrors your Office page behavior)
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data: { session } } = await supa.auth.getSession();
+      if (mounted) {
+        setAuthed(!!session);
+        setLoadingAuth(false);
+      }
+    })();
+    const { data: { subscription } } = supa.auth.onAuthStateChange((_e, sess) => {
+      if (mounted) setAuthed(!!sess);
+    });
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [supa]);
+
+  // calendar state
   const [rows, setRows] = useState<EventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>('Week');
-  const [cursor, setCursor] = useState<Date>(new Date()); // controls the visible period
+  const [cursor, setCursor] = useState<Date>(new Date());
   const [editing, setEditing] = useState<EventRow | null>(null);
 
-  // load
+  // initial load
   useEffect(() => {
+    if (!authed) return;
     (async () => {
       setLoading(true);
       const { data, error } = await supa
@@ -44,39 +63,28 @@ export default function CalendarPage() {
       if (!error && data) setRows(data as EventRow[]);
       setLoading(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authed, supa]);
 
   // helpers
-  const toLocalInput = (iso?: string | null) => {
-    if (!iso) return '';
-    // yyyy-mm-ddThh:mm (local)
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    const mm = pad(d.getMonth() + 1);
-    const dd = pad(d.getDate());
-    const hh = pad(d.getHours());
-    const mi = pad(d.getMinutes());
-    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-  };
-
   const fmtNice = (iso?: string | null) => {
     if (!iso) return '';
     const d = new Date(iso);
     return d.toLocaleString(undefined, {
-      month: 'short', day: 'numeric', year: 'numeric',
-      hour: 'numeric', minute: '2-digit'
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
     });
   };
 
   // period derivation
   const weekStart = useMemo(() => {
     const d = new Date(cursor);
-    const day = d.getDay(); // 0 Sun
-    const diff = (day + 6) % 7; // Mon as first day
+    const day = d.getDay(); // 0 = Sun
+    const diff = (day + 6) % 7; // Monday as first day
     d.setDate(d.getDate() - diff);
-    d.setHours(0,0,0,0);
+    d.setHours(0, 0, 0, 0);
     return d;
   }, [cursor]);
 
@@ -98,41 +106,61 @@ export default function CalendarPage() {
     return cells;
   }, [cursor]);
 
-  // filtering events into current view
+  // filtering for active view
   const inRange = (d: Date, start: Date, end: Date) => d >= start && d < end;
 
   const eventsThisWeek = useMemo(() => {
     const start = new Date(weekStart);
     const end = new Date(weekStart);
     end.setDate(end.getDate() + 7);
-    return rows.filter(r => inRange(new Date(r.start_at), start, end));
+    return rows.filter((r) => inRange(new Date(r.start_at), start, end));
   }, [rows, weekStart]);
 
-  const dayStart = new Date(cursor); dayStart.setHours(0,0,0,0);
-  const dayEnd = new Date(cursor); dayEnd.setHours(24,0,0,0);
+  const dayStart = new Date(cursor); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(cursor);   dayEnd.setHours(24, 0, 0, 0);
+
   const eventsThisDay = useMemo(() => {
-    return rows.filter(r => inRange(new Date(r.start_at), dayStart, dayEnd));
+    return rows.filter((r) => inRange(new Date(r.start_at), dayStart, dayEnd));
   }, [rows, dayStart, dayEnd]);
 
   // CRUD
   async function saveEvent(payload: Partial<EventRow> & { id?: string }) {
+    // Normalize times: ensure end >= start if provided
+    let startISO = payload.start_at!;
+    let endISO = payload.end_at ?? null;
+    if (endISO && new Date(endISO).getTime() < new Date(startISO).getTime()) {
+      // push end to +1 hour
+      endISO = new Date(new Date(startISO).getTime() + 60 * 60 * 1000).toISOString();
+    }
+
     const clean = {
       title: payload.title ?? '',
       description: payload.description ?? '',
-      start_at: payload.start_at!,
-      end_at: payload.end_at ?? null,
+      start_at: startISO,
+      end_at: endISO,
       location: payload.location ?? '',
       prospect_id: payload.prospect_id ?? null,
     };
 
     if (payload.id) {
-      const { data, error } = await supa.from('events').update(clean).eq('id', payload.id).select('*').single();
+      const { data, error } = await supa
+        .from('events')
+        .update(clean)
+        .eq('id', payload.id)
+        .select('*')
+        .single();
       if (error) return alert(error.message);
-      setRows(prev => prev.map(r => r.id === payload.id ? (data as EventRow) : r));
+      setRows((prev) =>
+        prev
+          .map((r) => (r.id === payload.id ? (data as EventRow) : r))
+          .sort((a, b) => +new Date(a.start_at) - +new Date(b.start_at))
+      );
     } else {
       const { data, error } = await supa.from('events').insert(clean).select('*').single();
       if (error) return alert(error.message);
-      setRows(prev => [...prev, data as EventRow]);
+      setRows((prev) =>
+        [...prev, data as EventRow].sort((a, b) => +new Date(a.start_at) - +new Date(b.start_at))
+      );
     }
     setEditing(null);
   }
@@ -141,7 +169,28 @@ export default function CalendarPage() {
     if (!confirm('Delete this event?')) return;
     const { error } = await supa.from('events').delete().eq('id', id);
     if (error) return alert(error.message);
-    setRows(prev => prev.filter(r => r.id !== id));
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  // Auth gate states
+  if (loadingAuth) {
+    return <div className="p-6 text-zinc-500">Loading…</div>;
+  }
+  if (!authed) {
+    return (
+      <div className="max-w-2xl mx-auto p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/70 border border-black/5 dark:border-white/10">
+        <h1 className="text-2xl font-semibold">You’ll need your key</h1>
+        <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+          This room is for members. Head back to the door and request your key.
+        </p>
+        <Link
+          href="/"
+          className="inline-flex mt-4 rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700"
+        >
+          Go to the door
+        </Link>
+      </div>
+    );
   }
 
   // UI
@@ -151,47 +200,65 @@ export default function CalendarPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Calendar</h1>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setEditing({
-              id: '' as any,
-              title: '',
-              description: '',
-              start_at: new Date().toISOString(),
-              end_at: new Date(new Date().getTime() + 60*60*1000).toISOString(),
-              location: '',
-              prospect_id: null,
-              created_at: new Date().toISOString()
-            })}
+            onClick={() =>
+              setEditing({
+                id: '' as any,
+                title: '',
+                description: '',
+                start_at: new Date().toISOString(),
+                end_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+                location: '',
+                prospect_id: null,
+                created_at: new Date().toISOString(),
+              })
+            }
             className="inline-flex items-center gap-2 rounded-xl bg-sky-600 text-white font-medium px-4 py-2 hover:bg-sky-700"
           >
             <Plus className="h-4 w-4" /> New Event
           </button>
+
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-            {(['Month','Week','Day'] as ViewMode[]).map(v => (
+            {(['Month', 'Week', 'Day'] as ViewMode[]).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`px-3 py-2 text-sm ${view===v ? 'bg-zinc-100 dark:bg-zinc-800 font-medium' : ''}`}
+                className={`px-3 py-2 text-sm ${
+                  view === v ? 'bg-zinc-100 dark:bg-zinc-800 font-medium' : ''
+                }`}
               >
                 {v}
               </button>
             ))}
           </div>
+
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-            <button className="px-3 py-2 text-sm" onClick={() => setCursor(new Date())}>Today</button>
-            <button className="px-3 py-2 text-sm" onClick={() => {
-              const d = new Date(cursor);
-              if (view==='Month') d.setMonth(d.getMonth()-1);
-              if (view==='Week') d.setDate(d.getDate()-7);
-              if (view==='Day') d.setDate(d.getDate()-1);
-              setCursor(d);
-            }}>{'←'}</button>
-            <button className="px-3 py-2 text-sm" onClick={() => {
-              const d = new Date(cursor);
-              if (view==='Month') d.setMonth(d.getMonth()+1);
-              if (view==='Week') d.setDate(d.getDate()+7);
-              if (view==='Day') d.setDate(d.getDate()+1);
-              setCursor(d);
-            }}>{'→'}</button>
+            <button className="px-3 py-2 text-sm" onClick={() => setCursor(new Date())}>
+              Today
+            </button>
+            <button
+              className="px-3 py-2 text-sm"
+              onClick={() => {
+                const d = new Date(cursor);
+                if (view === 'Month') d.setMonth(d.getMonth() - 1);
+                if (view === 'Week') d.setDate(d.getDate() - 7);
+                if (view === 'Day') d.setDate(d.getDate() - 1);
+                setCursor(d);
+              }}
+            >
+              {'←'}
+            </button>
+            <button
+              className="px-3 py-2 text-sm"
+              onClick={() => {
+                const d = new Date(cursor);
+                if (view === 'Month') d.setMonth(d.getMonth() + 1);
+                if (view === 'Week') d.setDate(d.getDate() + 7);
+                if (view === 'Day') d.setDate(d.getDate() + 1);
+                setCursor(d);
+              }}
+            >
+              {'→'}
+            </button>
           </div>
         </div>
       </div>
@@ -200,20 +267,34 @@ export default function CalendarPage() {
       <div className="mt-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/50 p-3 sm:p-4">
         {view === 'Month' && (
           <div className="grid grid-cols-7 gap-2">
-            {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
-              <div key={d} className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400 px-1">{d}</div>
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+              <div
+                key={d}
+                className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400 px-1"
+              >
+                {d}
+              </div>
             ))}
             {monthDays.map((d, i) => {
               const sameMonth = d.getMonth() === cursor.getMonth();
-              const cellEvents = rows.filter(r => {
+              const cellEvents = rows.filter((r) => {
                 const sd = new Date(r.start_at);
-                return sd.getFullYear()===d.getFullYear() && sd.getMonth()===d.getMonth() && sd.getDate()===d.getDate();
+                return (
+                  sd.getFullYear() === d.getFullYear() &&
+                  sd.getMonth() === d.getMonth() &&
+                  sd.getDate() === d.getDate()
+                );
               });
               return (
-                <div key={i} className={`min-h-[100px] rounded-xl border px-2 py-1 ${sameMonth ? 'border-zinc-200 dark:border-zinc-800' : 'border-transparent opacity-50'}`}>
+                <div
+                  key={i}
+                  className={`min-h-[100px] rounded-xl border px-2 py-1 ${
+                    sameMonth ? 'border-zinc-200 dark:border-zinc-800' : 'border-transparent opacity-50'
+                  }`}
+                >
                   <div className="text-xs mb-1">{d.getDate()}</div>
                   <div className="space-y-1">
-                    {cellEvents.map(ev => (
+                    {cellEvents.map((ev) => (
                       <button
                         key={ev.id}
                         onClick={() => setEditing(ev)}
@@ -233,9 +314,13 @@ export default function CalendarPage() {
         {view === 'Week' && (
           <div className="grid grid-cols-7 gap-3">
             {weekDays.map((d, idx) => {
-              const dayEvents = eventsThisWeek.filter(e => {
+              const dayEvents = eventsThisWeek.filter((e) => {
                 const sd = new Date(e.start_at);
-                return sd.getFullYear()===d.getFullYear() && sd.getMonth()===d.getMonth() && sd.getDate()===d.getDate();
+                return (
+                  sd.getFullYear() === d.getFullYear() &&
+                  sd.getMonth() === d.getMonth() &&
+                  sd.getDate() === d.getDate()
+                );
               });
               return (
                 <div key={idx} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-2">
@@ -246,11 +331,15 @@ export default function CalendarPage() {
                     {dayEvents.length === 0 && (
                       <div className="text-xs text-zinc-500">No events</div>
                     )}
-                    {dayEvents.map(ev => (
-                      <div key={ev.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-white/70 dark:bg-zinc-900">
+                    {dayEvents.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-white/70 dark:bg-zinc-900"
+                      >
                         <div className="text-sm font-semibold">{ev.title || '(no title)'}</div>
                         <div className="text-xs text-zinc-500">
-                          {fmtNice(ev.start_at)}{ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
+                          {fmtNice(ev.start_at)}
+                          {ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
                         </div>
                         {ev.location && <div className="text-xs mt-1">📍 {ev.location}</div>}
                         <div className="mt-2 flex items-center gap-2">
@@ -290,17 +379,26 @@ export default function CalendarPage() {
         {view === 'Day' && (
           <div>
             <div className="text-sm font-medium mb-3">
-              {cursor.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+              {cursor.toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })}
             </div>
             <div className="space-y-2">
               {eventsThisDay.length === 0 && (
                 <div className="text-sm text-zinc-500">No events for this day.</div>
               )}
-              {eventsThisDay.map(ev => (
-                <div key={ev.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-white/70 dark:bg-zinc-900">
+              {eventsThisDay.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-white/70 dark:bg-zinc-900"
+                >
                   <div className="font-semibold">{ev.title || '(no title)'}</div>
                   <div className="text-xs text-zinc-500">
-                    {fmtNice(ev.start_at)}{ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
+                    {fmtNice(ev.start_at)}
+                    {ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
                   </div>
                   {ev.description && <div className="text-sm mt-1">{ev.description}</div>}
                   {ev.location && <div className="text-xs mt-1">📍 {ev.location}</div>}
@@ -318,7 +416,10 @@ export default function CalendarPage() {
                       <Trash2 className="h-3.5 w-3.5" /> Delete
                     </button>
                     {ev.prospect_id && (
-                      <a href={`/office/list-builder?prospect=${ev.prospect_id}`} className="ml-auto text-xs underline">
+                      <a
+                        href={`/office/list-builder?prospect=${ev.prospect_id}`}
+                        className="ml-auto text-xs underline"
+                      >
                         View Prospect →
                       </a>
                     )}
@@ -345,7 +446,7 @@ export default function CalendarPage() {
 function EventModal({
   value,
   onCancel,
-  onSave
+  onSave,
 }: {
   value: EventRow;
   onCancel: () => void;
@@ -358,7 +459,7 @@ function EventModal({
     start_at: value.start_at,
     end_at: value.end_at,
     location: value.location || '',
-    prospect_id: value.prospect_id || null
+    prospect_id: value.prospect_id || null,
   });
 
   const toInput = (iso?: string | null) => {
@@ -423,7 +524,7 @@ function EventModal({
               onChange={(e) => setDraft({ ...draft, end_at: new Date(e.target.value).toISOString() })}
             />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1 sm:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Prospect ID (optional)</span>
             <input
               className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
@@ -435,7 +536,10 @@ function EventModal({
         </div>
 
         <div className="mt-4 flex items-center justify-end gap-2">
-          <button onClick={onCancel} className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2">
+          <button
+            onClick={onCancel}
+            className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2"
+          >
             Cancel
           </button>
           <button
