@@ -1,6 +1,13 @@
 'use client';
 import Link from 'next/link';
 import { Card, Page } from '@/components/ui';
+import SoftGuardBanner from '@/components/SoftGuardBanner';
+
+export default function KitchenPage() {
+  return (
+    <div className="px-4 md:px-6 lg:px-8 max-w-[1700px] mx-auto w-full">
+      <SoftGuardBanner />
+ 
 
 export default function KitchenHome() {
   return (
