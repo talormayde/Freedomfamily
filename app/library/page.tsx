@@ -269,29 +269,59 @@ export default function LibraryPage() {
                   <div className="flex items-center gap-2">
                     <button
                       title="Share"
-                      onClick={() =>
-                        item.type === 'file' ? shareFile(item.path) : shareFolder(item.path)
-                      }
-                      className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50"
-                    >
+                      onClick={async () => {
+  try {
+    if (item.type === 'file') {
+      const { data, error } = await supa.storage.from('library').createSignedUrl(item.path, 60 * 60);
+      if (error || !data?.signedUrl) return alert(error?.message || 'No link.');
+      try {
+        await navigator.clipboard.writeText(data.signedUrl);
+        alert('Link copied!');
+      } catch {
+        prompt('Copy link:', data.signedUrl);
+      }
+    } else {
+      // folder -> export links for all files inside (same as your shareFolder)
+      const { data, error } = await supa.storage.from('library').list(item.path);
+      if (error) return alert(error.message);
+      const files = (data || []).filter(e => e.metadata);
+      const urls: string[] = [];
+      for (const f of files) {
+        const full = `${item.path}/${f.name}`;
+        const { data: link } = await supa.storage.from('library').createSignedUrl(full, 60 * 60);
+        if (link?.signedUrl) urls.push(link.signedUrl);
+      }
+      const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
+      const dl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = dl;
+      a.download = (item.path.split('/').pop() || 'folder') + '-links.txt';
+      a.click();
+      URL.revokeObjectURL(dl);
+    }
+  } catch (e:any) {
+    alert(e.message || 'Could not create share link.');
+  }
+}}
                       <Share2 className="h-4 w-4" />
                     </button>
                     <button
                       title="Copy link"
                       onClick={async () => {
-                        if (item.type === 'folder') {
-                          await shareFolder(item.path); // same behavior: export links
-                          return;
-                        }
-                        const { data, error } = await supa.storage
-                          .from('library')
-                          .createSignedUrl(item.path, 60 * 60);
-                        if (error) return alert(error.message);
-                        if (data?.signedUrl) {
-                          await navigator.clipboard.writeText(data.signedUrl);
-                          alert('Link copied!');
-                        }
-                      }}
+  const targetPath = item.type === 'file' ? item.path : item.path + '/';
+  try {
+    const { data, error } = await supa.storage.from('library').createSignedUrl(targetPath, 60 * 60);
+    if (error || !data?.signedUrl) return alert(error?.message || 'No link.');
+    try {
+      await navigator.clipboard.writeText(data.signedUrl);
+      alert('Link copied!');
+    } catch {
+      prompt('Copy link:', data.signedUrl);
+    }
+  } catch (e:any) {
+    alert(e.message || 'Could not copy link.');
+  }
+}}
                       className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50"
                     >
                       <LinkIcon className="h-4 w-4" />
