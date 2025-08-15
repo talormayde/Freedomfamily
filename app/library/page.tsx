@@ -1,7 +1,7 @@
 // app/library/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import {
   FolderPlus,
@@ -16,33 +16,30 @@ import {
 } from 'lucide-react';
 
 type Item = {
-  name: string;              // filename or folder name
-  path: string;              // full key in bucket
+  name: string; // filename or folder name
+  path: string; // full path in bucket (no leading slash)
   type: 'file' | 'folder';
   size?: number | null;
   updated_at?: string | null;
 };
 
-const BUCKET = 'library';
-
 export default function LibraryPage() {
   const supa = supabaseBrowser();
 
-  const [cwd, setCwd] = useState<string>('');      // current "folder" (prefix). '' = root
+  const [cwd, setCwd] = useState<string>(''); // current folder ('' = root)
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // ---- helpers --------------------------------------------------------------
+  // inline rename state
+  const [renamingId, setRenamingId] = useState<string | null>(null);
 
-  const bucket = () => supa.storage.from(BUCKET);
-  const join = (...segs: (string | undefined)[]) => segs.filter(Boolean).join('/');
-
+  // ---------- data ----------
   async function list(prefix: string) {
     setLoading(true);
     setErr(null);
     try {
-      const { data, error } = await bucket().list(prefix || undefined, {
+      const { data, error } = await supa.storage.from('library').list(prefix || undefined, {
         limit: 1000,
         sortBy: { column: 'name', order: 'asc' },
       });
@@ -51,15 +48,15 @@ export default function LibraryPage() {
       const out: Item[] =
         (data || []).map((e: any) => ({
           name: e.name,
-          path: join(prefix, e.name),
-          type: e.metadata ? 'file' : 'folder', // Supabase: folders have no metadata
+          path: (prefix ? `${prefix}/` : '') + e.name,
+          type: e.metadata ? 'file' : 'folder',
           size: e.metadata?.size ?? null,
           updated_at: e.updated_at ?? null,
-        })) || [];
+        })) ?? [];
 
       setItems(out);
     } catch (e: any) {
-      setErr(e?.message || 'Failed to load library.');
+      setErr(e.message || 'Failed to load library');
     } finally {
       setLoading(false);
     }
@@ -70,166 +67,169 @@ export default function LibraryPage() {
     list(cwd);
   }, [cwd]);
 
-  function goUp() {
-    if (!cwd) return;
-    const parts = cwd.split('/').filter(Boolean);
+  // parent prefix of a path
+  const parentOf = (fullPath: string) => {
+    const parts = fullPath.split('/').filter(Boolean);
     parts.pop();
-    setCwd(parts.join('/'));
-  }
+    return parts.join('/');
+  };
 
-  // ---- create / upload ------------------------------------------------------
+  // ---------- actions ----------
+  function openItem(item: Item) {
+    if (item.type === 'folder') {
+      setCwd(item.path);
+      return;
+    }
+    // file: sign & open
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    supa.storage
+      .from('library')
+      .createSignedUrl(item.path, 60 * 60)
+      .then(({ data, error }) => {
+        if (error) {
+          alert(error.message);
+          return;
+        }
+        if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+      });
+  }
 
   async function createFolder() {
     const name = prompt('Folder name?');
     if (!name) return;
 
-    // conflict check
-    const { data: siblings } = await bucket().list(cwd || undefined);
-    if ((siblings || []).some((e: any) => e.name === name && !e.metadata)) {
-      alert('A folder with that name already exists here.');
-      return;
-    }
+    // create a placeholder to guarantee the prefix exists
+    const key = (cwd ? `${cwd}/` : '') + name + '/.keep';
+    const { error } = await supa
+      .storage
+      .from('library')
+      .upload(key, new Blob(['keep'], { type: 'text/plain' }), { upsert: true });
 
-    // create a placeholder so the folder shows in list()
-    const key = join(cwd, name, '.keep');
-    const { error } = await bucket().upload(
-      key,
-      new Blob(['keep'], { type: 'text/plain' }),
-      { upsert: true }
-    );
-    if (error) {
-      alert(error.message);
-      return;
-    }
+    if (error) return alert(error.message);
     await list(cwd);
   }
 
   async function uploadFile(file: File) {
-    const key = join(cwd, file.name);
-
-    // optional conflict check (upsert: true would overwrite)
-    const { data: siblings } = await bucket().list(cwd || undefined);
-    if ((siblings || []).some((e: any) => e.name === file.name && e.metadata)) {
-      const ok = confirm('A file with that name exists. Overwrite?');
-      if (!ok) return;
-    }
-
-    const { error } = await bucket().upload(key, file, { upsert: true });
-    if (error) {
-      alert(error.message);
-      return;
-    }
+    const key = (cwd ? `${cwd}/` : '') + file.name;
+    const { error } = await supa.storage.from('library').upload(key, file, { upsert: true });
+    if (error) return alert(error.message);
     await list(cwd);
   }
 
-  // ---- open / share / copy --------------------------------------------------
-
-  async function openItem(item: Item) {
-    if (item.type === 'folder') {
-      setCwd(item.path);
-      return;
-    }
-    const { data, error } = await bucket().createSignedUrl(item.path, 60 * 60);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
-  }
-
   async function shareFile(path: string) {
-    const { data, error } = await bucket().createSignedUrl(path, 60 * 60);
+    const { data, error } = await supa.storage.from('library').createSignedUrl(path, 60 * 60); // 1h
     if (error) return alert(error.message);
+    const url = data?.signedUrl;
+    if (!url) return;
 
+    // try native share first
+    if ((navigator as any).share) {
+      try {
+        await (navigator as any).share({ url, title: path.split('/').pop() });
+        return;
+      } catch {
+        /* fall through to clipboard */
+      }
+    }
     try {
-      await navigator.clipboard.writeText(data.signedUrl);
-      alert('Share link copied to clipboard!');
+      await navigator.clipboard.writeText(url);
+      alert('Share link copied to clipboard.');
     } catch {
-      // iOS fallback
-      prompt('Copy link:', data.signedUrl);
+      prompt('Copy link:', url); // iOS fallback
     }
   }
 
   async function shareFolder(prefixPath: string) {
-    // For folders we export a quick file of signed links to the children (shallow).
-    const { data, error } = await bucket().list(prefixPath);
+    // cannot sign a "folder"; generate a .txt with signed URLs for contained files (shallow)
+    const { data, error } = await supa.storage.from('library').list(prefixPath);
     if (error) return alert(error.message);
 
-    const files = (data || []).filter((e: any) => e.metadata);
-    const urls: string[] = [];
-
-    for (const f of files) {
-      const full = join(prefixPath, f.name);
-      const { data: link } = await bucket().createSignedUrl(full, 60 * 60);
-      if (link?.signedUrl) urls.push(link.signedUrl);
+    const files = (data || []).filter((e: any) => !!e.metadata);
+    if (files.length === 0) {
+      alert('Folder has no files to share.');
+      return;
     }
 
-    if (urls.length === 0) return alert('No files to share in this folder.');
+    const urls: string[] = [];
+    for (const f of files) {
+      const full = `${prefixPath}/${f.name}`;
+      const { data: link } = await supa.storage.from('library').createSignedUrl(full, 60 * 60);
+      if (link?.signedUrl) urls.push(`${f.name}\n${link.signedUrl}\n`);
+    }
 
     const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
     const dl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = dl;
-    a.download = (prefixPath.split('/').pop() || 'folder') + '-links.txt';
+    a.download = (prefixPath.split('/').pop() || 'folder') + '-share-links.txt';
     a.click();
     URL.revokeObjectURL(dl);
   }
 
   async function copyLink(item: Item) {
-    // Copy a single signed URL (file) or the folder “index” text (same as shareFolder).
-    if (item.type === 'file') {
-      const { data, error } = await bucket().createSignedUrl(item.path, 60 * 60);
-      if (error) return alert(error.message);
-
+    if (item.type === 'folder') {
+      // no “real” folder link; provide a quick heads-up and copy the prefix for reference
+      const pseudo = `library://${item.path}/`;
       try {
-        await navigator.clipboard.writeText(data.signedUrl);
-        alert('Link copied!');
+        await navigator.clipboard.writeText(pseudo);
+        alert('Folder prefix copied (note: Supabase cannot create a single signed link for folders).');
       } catch {
-        prompt('Copy link:', data.signedUrl);
+        prompt('Copy folder prefix:', pseudo);
       }
       return;
     }
 
-    // Folder: create a signed URL pack (same as shareFolder), but copy to clipboard instead
-    const { data, error } = await bucket().list(item.path);
+    const { data, error } = await supa.storage.from('library').createSignedUrl(item.path, 60 * 60);
     if (error) return alert(error.message);
-
-    const files = (data || []).filter((e: any) => e.metadata);
-    if (files.length === 0) return alert('No files inside this folder.');
-
-    const lines: string[] = [];
-    for (const f of files) {
-      const full = join(item.path, f.name);
-      const { data: link } = await bucket().createSignedUrl(full, 60 * 60);
-      if (link?.signedUrl) lines.push(link.signedUrl);
-    }
-    const text = lines.join('\n');
+    const url = data?.signedUrl;
+    if (!url) return;
     try {
-      await navigator.clipboard.writeText(text);
-      alert('Folder file links copied!');
+      await navigator.clipboard.writeText(url);
+      alert('Link copied!');
     } catch {
-      prompt('Copy links:', text);
+      prompt('Copy link:', url);
     }
   }
 
-  // ---- rename (file + (shallow) folder) ------------------------------------
+  async function remove(item: Item) {
+    if (!confirm(`Delete ${item.type} "${item.name}"?`)) return;
 
-  async function renameItem(item: Item) {
-    const currentName = item.name;
-    const newName = prompt(`Rename ${item.type}`, currentName || '');
-    if (!newName || newName === currentName) return;
+    if (item.type === 'file') {
+      const { error } = await supa.storage.from('library').remove([item.path]);
+      if (error) return alert(error.message);
+    } else {
+      // shallow delete (contents in that prefix)
+      const { data, error } = await supa.storage.from('library').list(item.path);
+      if (error) return alert(error.message);
+      const keys = (data || []).map((e: any) => `${item.path}/${e.name}`);
+      if (keys.length) {
+        const { error: delErr } = await supa.storage.from('library').remove(keys);
+        if (delErr) return alert(delErr.message);
+      }
+      // remove placeholder if present
+      await supa.storage.from('library').remove([`${item.path}/.keep`]).catch(() => {});
+    }
+    await list(cwd);
+  }
 
-    // parent prefix ('' when at root)
-    const parent = (() => {
-      const parts = item.path.split('/').filter(Boolean);
-      parts.pop();
-      return parts.join('/');
-    })();
+  // ---------- rename ----------
+  function toggleRename(id: string) {
+    setRenamingId((curr) => (curr === id ? null : id));
+  }
 
-    // conflicts
-    const { data: siblings } = await bucket().list(parent || undefined);
-    const conflict = (siblings || []).some((e: any) =>
-      e.name === newName && (!!e.metadata === (item.type === 'file'))
+  async function renameItemInline(item: Item, newNameRaw: string) {
+    const newName = newNameRaw.trim();
+    if (!newName || newName === item.name) {
+      setRenamingId(null);
+      return;
+    }
+
+    const parent = parentOf(item.path);
+
+    // prevent overwrite by checking siblings
+    const { data: siblings } = await supa.storage.from('library').list(parent || undefined);
+    const conflict = (siblings || []).some(
+      (e: any) => e.name === newName && (!!e.metadata === (item.type === 'file')),
     );
     if (conflict) {
       alert(`A ${item.type} with that name already exists here.`);
@@ -238,63 +238,42 @@ export default function LibraryPage() {
 
     try {
       if (item.type === 'file') {
-        const dest = join(parent, newName);
-        const { error } = await bucket().move(item.path, dest);
+        const dest = [parent, newName].filter(Boolean).join('/');
+        const { error } = await supa.storage.from('library').move(item.path, dest);
         if (error) throw error;
       } else {
-        // shallow folder rename: move each child under new prefix
-        const newPrefix = join(parent, newName);
-        const { data, error } = await bucket().list(item.path);
+        // folder: shallow rename by moving each child to the new prefix
+        const newPrefix = [parent, newName].filter(Boolean).join('/');
+        const { data, error } = await supa.storage.from('library').list(item.path);
         if (error) throw error;
 
         for (const entry of data || []) {
-          const from = join(item.path, entry.name);
-          const to = join(newPrefix, entry.name);
-          const mv = await bucket().move(from, to);
+          const from = `${item.path}/${entry.name}`;
+          const to = `${newPrefix}/${entry.name}`;
+          const mv = await supa.storage.from('library').move(from, to);
           if (mv.error) throw new Error(`Failed moving ${entry.name}: ${mv.error.message}`);
         }
-
-        // move .keep if present
-        await bucket().move(join(item.path, '.keep'), join(newPrefix, '.keep')).catch(() => {});
+        // move placeholder if it exists
+        await supa.storage.from('library').move(`${item.path}/.keep`, `${newPrefix}/.keep`).catch(() => {});
       }
 
+      setRenamingId(null);
       await list(parent);
     } catch (e: any) {
       alert(e?.message || 'Rename failed.');
     }
   }
 
-  // ---- delete ---------------------------------------------------------------
-
-  async function remove(item: Item) {
-    if (!confirm(`Delete ${item.type} "${item.name}"?`)) return;
-
-    try {
-      if (item.type === 'file') {
-        const { error } = await bucket().remove([item.path]);
-        if (error) throw error;
-      } else {
-        // shallow delete of folder contents
-        const { data, error } = await bucket().list(item.path);
-        if (error) throw error;
-
-        const keys = (data || []).map((e: any) => join(item.path, e.name));
-        if (keys.length) {
-          const { error: delErr } = await bucket().remove(keys);
-          if (delErr) throw delErr;
-        }
-        // remove placeholder if present
-        await bucket().remove([join(item.path, '.keep')]).catch(() => {});
-      }
-
-      await list(cwd);
-    } catch (e: any) {
-      alert(e?.message || 'Delete failed.');
-    }
+  // ---------- small helpers for actions (iOS-hardened) ----------
+  function shareClick(item: Item) {
+    if (item.type === 'file') return void shareFile(item.path);
+    return void shareFolder(item.path);
+  }
+  function copyClick(item: Item) {
+    return void copyLink(item);
   }
 
-  // ---- UI -------------------------------------------------------------------
-
+  // ---------- UI ----------
   return (
     <div className="w-full">
       <div className="mx-auto w-full max-w-screen-2xl px-2 sm:px-4">
@@ -302,11 +281,13 @@ export default function LibraryPage() {
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Library</h1>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={createFolder}
               className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/80 px-3 py-2 text-sm hover:bg-white/90"
             >
               <FolderPlus className="h-4 w-4" /> New Folder
             </button>
+
             <label className="relative inline-flex items-center">
               <input
                 type="file"
@@ -328,7 +309,8 @@ export default function LibraryPage() {
           <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200/70 dark:border-zinc-800/60">
             <div className="flex items-center gap-2">
               <button
-                onClick={goUp}
+                type="button"
+                onClick={() => setCwd((p) => parentOf(p))}
                 disabled={!cwd}
                 className="inline-flex items-center gap-2 rounded-lg px-2 py-1 text-sm disabled:opacity-40 hover:bg-zinc-100 dark:hover:bg-zinc-900"
               >
@@ -347,6 +329,7 @@ export default function LibraryPage() {
 
               {items.map((item) => (
                 <div key={item.path} className="px-3 py-2 flex items-center justify-between">
+                  {/* LEFT: icon + name/rename + meta */}
                   <div className="flex items-center gap-3 min-w-0">
                     {item.type === 'folder' ? (
                       <Folder className="h-5 w-5 text-amber-600" />
@@ -354,13 +337,29 @@ export default function LibraryPage() {
                       <FileIcon className="h-5 w-5 text-sky-600" />
                     )}
 
-                    <button
-                      className="truncate text-left hover:underline"
-                      onClick={() => void openItem(item)}
-                      title={item.type === 'folder' ? 'Open folder' : 'Open file'}
-                    >
-                      {item.name}
-                    </button>
+                    {renamingId === item.path ? (
+                      <RenameForm
+                        initial={item.name}
+                        onCancel={() => setRenamingId(null)}
+                        onSubmit={(val) => renameItemInline(item, val)}
+                      />
+                    ) : (
+                      <button
+                        className="truncate text-left hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openItem(item);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onTouchEnd={(e) => {
+                          e.stopPropagation();
+                          openItem(item);
+                        }}
+                        title={item.type === 'folder' ? 'Open folder' : 'Open file'}
+                      >
+                        {item.name}
+                      </button>
+                    )}
 
                     <div className="text-xs text-zinc-500 truncate">
                       {item.updated_at ? ` • ${new Date(item.updated_at).toLocaleString()}` : ''}
@@ -368,40 +367,71 @@ export default function LibraryPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {/* Share */}
+                  {/* RIGHT: actions (iOS-hardened) */}
+                  <div className="flex items-center gap-2 relative z-10">
                     <button
-                      title="Share"
-                      onClick={() =>
-                        item.type === 'file' ? void shareFile(item.path) : void shareFolder(item.path)
-                      }
+                      type="button"
+                      aria-label="Share"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        shareClick(item);
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        shareClick(item);
+                      }}
                       className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50"
                     >
                       <Share2 className="h-4 w-4" />
                     </button>
 
-                    {/* Copy link */}
                     <button
-                      title="Copy link"
-                      onClick={() => void copyLink(item)}
+                      type="button"
+                      aria-label="Copy link"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyClick(item);
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        copyClick(item);
+                      }}
                       className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50"
                     >
                       <LinkIcon className="h-4 w-4" />
                     </button>
 
-                    {/* Rename */}
                     <button
-                      title="Rename"
-                      onClick={() => void renameItem(item)}
+                      type="button"
+                      aria-label="Rename"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleRename(item.path);
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        toggleRename(item.path);
+                      }}
                       className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50"
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
 
-                    {/* Delete */}
                     <button
-                      title="Delete"
-                      onClick={() => void remove(item)}
+                      type="button"
+                      aria-label="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void remove(item);
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        void remove(item);
+                      }}
                       className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 hover:bg-red-100"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -414,5 +444,47 @@ export default function LibraryPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- tiny rename form ---------- */
+function RenameForm({
+  initial,
+  onCancel,
+  onSubmit,
+}: {
+  initial: string;
+  onCancel: () => void;
+  onSubmit: (v: string) => void;
+}) {
+  const [val, setVal] = useState(initial);
+  return (
+    <form
+      className="flex items-center gap-2 min-w-0"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit(val);
+      }}
+    >
+      <input
+        autoFocus
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        className="min-w-0 max-w-[40ch] truncate rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
+      />
+      <button
+        type="submit"
+        className="px-2 py-1 rounded-md text-sm bg-sky-600 text-white hover:bg-sky-700"
+      >
+        Save
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="px-2 py-1 rounded-md text-sm border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+      >
+        Cancel
+      </button>
+    </form>
   );
 }
