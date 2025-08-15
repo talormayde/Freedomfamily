@@ -4,6 +4,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { Pencil, Trash2, Plus } from 'lucide-react';
+import SoftGuardBanner from '@/components/SoftGuardBanner';
+
+export default function OfficePage() {
+  return (
+    <div className="px-4 md:px-6 lg:px-8 max-w-[1700px] mx-auto w-full">
+      <SoftGuardBanner />
+      {/* ...rest of your Office page... */}
+    </div>
+  );
+}
 
 type EventRow = {
   id: string;
