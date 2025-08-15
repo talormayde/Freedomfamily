@@ -45,14 +45,15 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-[200] backdrop-blur bg-white/70 dark:bg-zinc-900/60 border-b border-black/5 dark:border-white/10">
           <div className="mx-auto px-4 sm:px-6 lg:px-8 max-w-[1700px] h-14 flex items-center justify-between text-zinc-900 dark:text-zinc-100">
             <Link href="/" className="font-semibold">Freedom Family</Link>
-            <nav className="hidden sm:flex items-center gap-6 text-sm">
-              <Link href="/office" className="hover:opacity-70">Office</Link>
-              <Link href="/library" className="hover:opacity-70">Library</Link>
-              <Link href="/living" className="hover:opacity-70">Living</Link>
-              <Link href="/kitchen" className="hover:opacity-70">Kitchen</Link>
-              <Link href="/calendar" className="hover:opacity-70">Calendar</Link>
-              <ThemeToggle />
-            </nav>
+            // inside <header>...
+							<nav className="hidden sm:flex items-center gap-6 text-sm relative z-10">
+  								<Link href="/office" className="hover:opacity-70">Office</Link>
+  								<Link href="/library" className="hover:opacity-70">Library</Link>
+							  <Link href="/living" className="hover:opacity-70">Living</Link>
+							  <Link href="/kitchen" className="hover:opacity-70">Kitchen</Link>
+						  		<Link href="/calendar" className="hover:opacity-70">Calendar</Link>
+								  {/* ThemeToggle stays here */}
+							</nav>
           </div>
         </header>
       )}
