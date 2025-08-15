@@ -86,3 +86,24 @@ html, body { height: 100%; }
 .pointer-events-none {
   pointer-events: none !important;
 }
+
+/* Prevent decorative backdrops from blocking taps */
+.backdrop,
+.modal-backdrop,
+.modal-overlay,
+.scrim,
+.glass-overlay {
+  pointer-events: none !important;
+}
+
+/* When a modal is actually open, let the backdrop capture clicks */
+.modal-open .modal-backdrop,
+.modal-open .modal-overlay,
+.modal-open .scrim {
+  pointer-events: auto !important;
+}
+
+/* Defensive: links/buttons should always be clickable */
+a, button, [role="button"], nav, main {
+  pointer-events: auto !important;
+}
