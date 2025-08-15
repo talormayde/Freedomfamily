@@ -4,6 +4,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
+import { Suspense } from 'react';
+import SequenceClient from './SequenceClient';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-6 text-zinc-500">Loading…</div>}>
+      <SequenceClient />
+    </Suspense>
+  );
+}
 import { ArrowLeft, Phone, MessageSquare, CalendarPlus, BookOpen, Check, ChevronRight, Loader2, Copy } from 'lucide-react';
 
 type Prospect = {
