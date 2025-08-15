@@ -32,7 +32,7 @@ export default function HomePage() {
           style={{ background: 'linear-gradient(135deg, rgba(180,245,200,.55), rgba(180,220,255,.55))' }}
         >
           {/* The crucial fix: don't eat clicks */}
-          <div className="absolute inset-0 backdrop-blur-md pointer-events-none" />
+          <div className="absolute inset-0 z-0 backdrop-blur-md pointer-events-none" />
 
           <div className="relative grid md:grid-cols-2 gap-8 items-center">
             <div>
