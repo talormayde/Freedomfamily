@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Page, Card } from '@/components/ui';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-
+test
 type Activity = {
   id: string;
   actor: string | null;
