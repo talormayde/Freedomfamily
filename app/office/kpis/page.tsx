@@ -1,8 +1,10 @@
+// app/office/kpis/page.tsx
 'use client';
+
 import { useEffect, useMemo, useState } from 'react';
 import { Page, Card } from '@/components/ui';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-test
+
 type Activity = {
   id: string;
   actor: string | null;
@@ -28,22 +30,22 @@ export default function KPIPage() {
       const id = session?.user?.id ?? null;
       setUid(id);
       if (!id) { setLoading(false); return; }
-      const { data } = await supa
+      const { data, error } = await supa
         .from('activities')
         .select('*')
         .order('occurred_at', { ascending: false })
         .limit(500);
-      setRows((data ?? []) as Activity[]);
+      if (!error) setRows((data ?? []) as Activity[]);
       setLoading(false);
     })();
-  }, []);
+  }, [supa]);
 
   const weekly = useMemo(() => {
     const by = { qi:0, stp:0, guest:0, pv:0 };
     const tby = { qi:0, stp:0, guest:0, pv:0 };
     const now = new Date();
     const start = new Date(now);
-    start.setDate(now.getDate() - 6); // last 7 days
+    start.setDate(now.getDate() - 6);
     const todayIso = now.toISOString().slice(0,10);
     rows.forEach(r => {
       const d = r.occurred_at.slice(0,10);
@@ -55,8 +57,8 @@ export default function KPIPage() {
   }, [rows]);
 
   const add = async () => {
-    if (!uid) return;
-    const { error } = await supa.from('activities').insert([{ actor: uid, type: addType, value: addVal }]);
+    // trigger will set actor; don't send it from client
+    const { error } = await supa.from('activities').insert([{ type: addType, value: addVal }]);
     if (!error) {
       const { data } = await supa.from('activities').select('*').order('occurred_at', { ascending: false }).limit(500);
       setRows((data ?? []) as Activity[]);
