@@ -175,88 +175,97 @@ export default function ListBuilder() {
 
       {/* Filter Bar */}
       <div className="mt-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/50 p-3 sm:p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {/* Field */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Select field</span>
-            <select
-              className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-              value={filter.field}
-              onChange={(e) => setFilter({ field: e.target.value as FilterField, value: '' })}
-            >
-              <option value="list">List</option>
-              <option value="relationship_status">Relationship status</option>
-              <option value="looking">Looking</option>
-              <option value="last_step">Last step</option>
-              <option value="next_step">Next step</option>
-              <option value="location">Location</option>
-              <option value="age">Age</option>
-            </select>
-          </label>
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+    {/* Field */}
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+        Select field
+      </span>
+      <select
+        className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
+        value={filter.field}
+        onChange={(e) => setFilter({ field: e.target.value as any, value: '' })}
+      >
+        <option value="list">List</option>
+        <option value="relationship_status">Relationship status</option>
+        <option value="looking">Looking</option>
+        <option value="last_step">Last step</option>
+        <option value="next_step">Next step</option>
+        <option value="location">Location</option>
+        <option value="age">Age</option>
+      </select>
+    </label>
 
-          {/* Value */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Select option</span>
-            {valueOptions ? (
-              <select
-                className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-                value={filter.value}
-                onChange={(e) => setFilter({ ...filter, value: e.target.value })}
-              >
-                <option value="">— Select —</option>
-                {valueOptions.map(o => (
-                  <option key={o} value={o}>{o.replace(/_/g,' ')}</option>
-                ))}
-              </select>
-            ) : (
-              <input
-                className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-                placeholder={filter.field === 'age' ? 'Type age (e.g., 27)' : 'Type a value…'}
-                value={filter.value}
-                onChange={(e) => setFilter({ ...filter, value: e.target.value })}
-              />
-            )}
-          </label>
+    {/* Value */}
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+        Select option
+      </span>
+      {valueOptions ? (
+        <select
+          className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
+          value={filter.value}
+          onChange={(e) => setFilter({ ...filter, value: e.target.value })}
+        >
+          <option value="">— Select —</option>
+          {valueOptions.map((o) => (
+            <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
+          placeholder={filter.field === 'age' ? 'Type age (e.g., 27)' : 'Type a value…'}
+          value={filter.value}
+          onChange={(e) => setFilter({ ...filter, value: e.target.value })}
+        />
+      )}
+    </label>
 
-          {/* Search */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Search (name / phone / email)</span>
-            <input
-              className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-              placeholder="Start typing…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
+    {/* Search */}
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+        Search (name / phone / email)
+      </span>
+      <input
+        className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
+        placeholder="Start typing…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+    </label>
 
-          {/* Due */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Due</span>
-            <select
-              className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
-              value={due}
-              onChange={(e) => setDue(e.target.value as DueFilter)}
-            >
-              <option>Any</option>
-              <option>Overdue</option>
-              <option>Today</option>
-              <option>Upcoming</option>
-            </select>
-          </label>
+    {/* Due */}
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+        Due
+      </span>
+      <select
+        className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
+        value={due}
+        onChange={(e) => setDue(e.target.value as any)}
+      >
+        <option>Any</option>
+        <option>Overdue</option>
+        <option>Today</option>
+        <option>Upcoming</option>
+      </select>
+    </label>
 
-          {/* Actions (affordance only; filters are reactive) */}
-          <div className="flex items-end gap-2">
-            <button className="w-full rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700">Apply</button>
-            <button
-              onClick={() => { setFilter({ field: 'list', value: '' }); setSearch(''); setDue('Any'); }}
-              className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2"
-            >
-              Reset
-            </button>
-          </div>
-        </div>
-      </div>
-
+    {/* Actions */}
+    <div className="flex items-end gap-2">
+      <button className="h-10 w-full rounded-xl bg-sky-600 text-white px-4 hover:bg-sky-700">
+        Apply
+      </button>
+      <button
+        onClick={() => { setFilter({ field: 'list', value: '' }); setSearch(''); setDue('Any'); }}
+        className="h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4"
+      >
+        Reset
+      </button>
+    </div>
+  </div>
+</div>
       {/* Table */}
       <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/50">
         {loading ? (
