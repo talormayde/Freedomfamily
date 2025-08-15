@@ -22,7 +22,7 @@ type ViewMode = 'Month' | 'Week' | 'Day';
 export default function CalendarPage() {
   const supa = supabaseBrowser();
 
-  // auth soft-gate (mirrors your Office page behavior)
+  // soft auth gate
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [authed, setAuthed] = useState(false);
 
@@ -51,7 +51,6 @@ export default function CalendarPage() {
   const [cursor, setCursor] = useState<Date>(new Date());
   const [editing, setEditing] = useState<EventRow | null>(null);
 
-  // initial load
   useEffect(() => {
     if (!authed) return;
     (async () => {
@@ -65,7 +64,6 @@ export default function CalendarPage() {
     })();
   }, [authed, supa]);
 
-  // helpers
   const fmtNice = (iso?: string | null) => {
     if (!iso) return '';
     const d = new Date(iso);
@@ -97,16 +95,14 @@ export default function CalendarPage() {
   const monthDays = useMemo(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
     const start = new Date(first);
-    start.setDate(1 - ((first.getDay() + 6) % 7)); // Monday grid start
-    const cells = Array.from({ length: 42 }).map((_, i) => {
+    start.setDate(1 - ((first.getDay() + 6) % 7));
+    return Array.from({ length: 42 }).map((_, i) => {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       return d;
     });
-    return cells;
   }, [cursor]);
 
-  // filtering for active view
   const inRange = (d: Date, start: Date, end: Date) => d >= start && d < end;
 
   const eventsThisWeek = useMemo(() => {
@@ -119,17 +115,13 @@ export default function CalendarPage() {
   const dayStart = new Date(cursor); dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(cursor);   dayEnd.setHours(24, 0, 0, 0);
 
-  const eventsThisDay = useMemo(() => {
-    return rows.filter((r) => inRange(new Date(r.start_at), dayStart, dayEnd));
-  }, [rows, dayStart, dayEnd]);
+  const eventsThisDay = useMemo(() => rows.filter((r) => inRange(new Date(r.start_at), dayStart, dayEnd)), [rows, dayStart, dayEnd]);
 
   // CRUD
   async function saveEvent(payload: Partial<EventRow> & { id?: string }) {
-    // Normalize times: ensure end >= start if provided
     let startISO = payload.start_at!;
     let endISO = payload.end_at ?? null;
     if (endISO && new Date(endISO).getTime() < new Date(startISO).getTime()) {
-      // push end to +1 hour
       endISO = new Date(new Date(startISO).getTime() + 60 * 60 * 1000).toISOString();
     }
 
@@ -172,10 +164,8 @@ export default function CalendarPage() {
     setRows((prev) => prev.filter((r) => r.id !== id));
   }
 
-  // Auth gate states
-  if (loadingAuth) {
-    return <div className="p-6 text-zinc-500">Loading…</div>;
-  }
+  if (loadingAuth) return <div className="p-6 text-zinc-500">Loading…</div>;
+
   if (!authed) {
     return (
       <div className="max-w-2xl mx-auto p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/70 border border-black/5 dark:border-white/10">
@@ -183,17 +173,13 @@ export default function CalendarPage() {
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">
           This room is for members. Head back to the door and request your key.
         </p>
-        <Link
-          href="/"
-          className="inline-flex mt-4 rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700"
-        >
+        <Link href="/" className="inline-flex mt-4 rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700">
           Go to the door
         </Link>
       </div>
     );
   }
 
-  // UI
   return (
     <div className="px-4 md:px-6 lg:px-8 max-w-[1700px] mx-auto w-full">
       <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
@@ -222,9 +208,7 @@ export default function CalendarPage() {
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`px-3 py-2 text-sm ${
-                  view === v ? 'bg-zinc-100 dark:bg-zinc-800 font-medium' : ''
-                }`}
+                className={`px-3 py-2 text-sm ${view === v ? 'bg-zinc-100 dark:bg-zinc-800 font-medium' : ''}`}
               >
                 {v}
               </button>
@@ -232,9 +216,7 @@ export default function CalendarPage() {
           </div>
 
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-            <button className="px-3 py-2 text-sm" onClick={() => setCursor(new Date())}>
-              Today
-            </button>
+            <button className="px-3 py-2 text-sm" onClick={() => setCursor(new Date())}>Today</button>
             <button
               className="px-3 py-2 text-sm"
               onClick={() => {
@@ -244,9 +226,7 @@ export default function CalendarPage() {
                 if (view === 'Day') d.setDate(d.getDate() - 1);
                 setCursor(d);
               }}
-            >
-              {'←'}
-            </button>
+            >{'←'}</button>
             <button
               className="px-3 py-2 text-sm"
               onClick={() => {
@@ -256,9 +236,7 @@ export default function CalendarPage() {
                 if (view === 'Day') d.setDate(d.getDate() + 1);
                 setCursor(d);
               }}
-            >
-              {'→'}
-            </button>
+            >{'→'}</button>
           </div>
         </div>
       </div>
@@ -268,30 +246,16 @@ export default function CalendarPage() {
         {view === 'Month' && (
           <div className="grid grid-cols-7 gap-2">
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-              <div
-                key={d}
-                className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400 px-1"
-              >
-                {d}
-              </div>
+              <div key={d} className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400 px-1">{d}</div>
             ))}
             {monthDays.map((d, i) => {
               const sameMonth = d.getMonth() === cursor.getMonth();
               const cellEvents = rows.filter((r) => {
                 const sd = new Date(r.start_at);
-                return (
-                  sd.getFullYear() === d.getFullYear() &&
-                  sd.getMonth() === d.getMonth() &&
-                  sd.getDate() === d.getDate()
-                );
+                return sd.getFullYear() === d.getFullYear() && sd.getMonth() === d.getMonth() && sd.getDate() === d.getDate();
               });
               return (
-                <div
-                  key={i}
-                  className={`min-h-[100px] rounded-xl border px-2 py-1 ${
-                    sameMonth ? 'border-zinc-200 dark:border-zinc-800' : 'border-transparent opacity-50'
-                  }`}
-                >
+                <div key={i} className={`min-h-[100px] rounded-xl border px-2 py-1 ${sameMonth ? 'border-zinc-200 dark:border-zinc-800' : 'border-transparent opacity-50'}`}>
                   <div className="text-xs mb-1">{d.getDate()}</div>
                   <div className="space-y-1">
                     {cellEvents.map((ev) => (
@@ -316,11 +280,7 @@ export default function CalendarPage() {
             {weekDays.map((d, idx) => {
               const dayEvents = eventsThisWeek.filter((e) => {
                 const sd = new Date(e.start_at);
-                return (
-                  sd.getFullYear() === d.getFullYear() &&
-                  sd.getMonth() === d.getMonth() &&
-                  sd.getDate() === d.getDate()
-                );
+                return sd.getFullYear() === d.getFullYear() && sd.getMonth() === d.getMonth() && sd.getDate() === d.getDate();
               });
               return (
                 <div key={idx} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-2">
@@ -328,18 +288,12 @@ export default function CalendarPage() {
                     {d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                   </div>
                   <div className="space-y-2">
-                    {dayEvents.length === 0 && (
-                      <div className="text-xs text-zinc-500">No events</div>
-                    )}
+                    {dayEvents.length === 0 && <div className="text-xs text-zinc-500">No events</div>}
                     {dayEvents.map((ev) => (
-                      <div
-                        key={ev.id}
-                        className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-white/70 dark:bg-zinc-900"
-                      >
+                      <div key={ev.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-2 bg-white/70 dark:bg-zinc-900">
                         <div className="text-sm font-semibold">{ev.title || '(no title)'}</div>
                         <div className="text-xs text-zinc-500">
-                          {fmtNice(ev.start_at)}
-                          {ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
+                          {fmtNice(ev.start_at)}{ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
                         </div>
                         {ev.location && <div className="text-xs mt-1">📍 {ev.location}</div>}
                         <div className="mt-2 flex items-center gap-2">
@@ -358,11 +312,7 @@ export default function CalendarPage() {
                             <Trash2 className="h-3.5 w-3.5" /> Delete
                           </button>
                           {ev.prospect_id && (
-                            <a
-                              href={`/office/list-builder?prospect=${ev.prospect_id}`}
-                              className="ml-auto text-xs underline"
-                              title="Open prospect"
-                            >
+                            <a href={`/office/list-builder?prospect=${ev.prospect_id}`} className="ml-auto text-xs underline" title="Open prospect">
                               View Prospect →
                             </a>
                           )}
@@ -379,26 +329,15 @@ export default function CalendarPage() {
         {view === 'Day' && (
           <div>
             <div className="text-sm font-medium mb-3">
-              {cursor.toLocaleDateString(undefined, {
-                weekday: 'long',
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+              {cursor.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
             </div>
             <div className="space-y-2">
-              {eventsThisDay.length === 0 && (
-                <div className="text-sm text-zinc-500">No events for this day.</div>
-              )}
+              {eventsThisDay.length === 0 && <div className="text-sm text-zinc-500">No events for this day.</div>}
               {eventsThisDay.map((ev) => (
-                <div
-                  key={ev.id}
-                  className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-white/70 dark:bg-zinc-900"
-                >
+                <div key={ev.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-white/70 dark:bg-zinc-900">
                   <div className="font-semibold">{ev.title || '(no title)'}</div>
                   <div className="text-xs text-zinc-500">
-                    {fmtNice(ev.start_at)}
-                    {ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
+                    {fmtNice(ev.start_at)}{ev.end_at ? ` – ${fmtNice(ev.end_at)}` : ''}
                   </div>
                   {ev.description && <div className="text-sm mt-1">{ev.description}</div>}
                   {ev.location && <div className="text-xs mt-1">📍 {ev.location}</div>}
@@ -416,10 +355,7 @@ export default function CalendarPage() {
                       <Trash2 className="h-3.5 w-3.5" /> Delete
                     </button>
                     {ev.prospect_id && (
-                      <a
-                        href={`/office/list-builder?prospect=${ev.prospect_id}`}
-                        className="ml-auto text-xs underline"
-                      >
+                      <a href={`/office/list-builder?prospect=${ev.prospect_id}`} className="ml-auto text-xs underline">
                         View Prospect →
                       </a>
                     )}
@@ -536,16 +472,10 @@ function EventModal({
         </div>
 
         <div className="mt-4 flex items-center justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2"
-          >
+          <button onClick={onCancel} className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2">
             Cancel
           </button>
-          <button
-            onClick={() => onSave(draft)}
-            className="rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700"
-          >
+          <button onClick={() => onSave(draft)} className="rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700">
             Save
           </button>
         </div>
