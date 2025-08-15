@@ -4,9 +4,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { Card, Page } from '@/components/ui';
 
-export default function KitchenHome() {
+export default function KitchenPage() {
   const supa = supabaseBrowser();
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [authed, setAuthed] = useState(false);
@@ -15,26 +14,22 @@ export default function KitchenHome() {
     let mounted = true;
     (async () => {
       const { data: { session } } = await supa.auth.getSession();
-      if (mounted) {
-        setAuthed(!!session);
-        setLoadingAuth(false);
-      }
+      if (mounted) setAuthed(!!session);
+      const { data: { subscription } } = supa.auth.onAuthStateChange((_e, sess) => {
+        if (mounted) setAuthed(!!sess);
+      });
+      setLoadingAuth(false);
+      return () => subscription.unsubscribe();
     })();
-    const { data: { subscription } } = supa.auth.onAuthStateChange((_e, sess) => {
-      if (mounted) setAuthed(!!sess);
-    });
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [supa]);
+    return () => { mounted = false; };
+  }, []); // eslint-disable-line
 
   if (loadingAuth) {
     return <div className="p-6 text-zinc-500">Loading…</div>;
   }
 
+  // Soft gate for non-members
   if (!authed) {
-    // Soft gate (same tone as Office/Calendar)
     return (
       <div className="max-w-2xl mx-auto p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/70 border border-black/5 dark:border-white/10">
         <h1 className="text-2xl font-semibold">You’ll need your key</h1>
@@ -51,14 +46,15 @@ export default function KitchenHome() {
     );
   }
 
-  // Authenticated content
+  // Authenticated Kitchen
   return (
-    <Page>
-      <h1 className="text-3xl font-semibold tracking-tight">Kitchen</h1>
+    <div className="px-4 md:px-6 lg:px-8 max-w-[1700px] mx-auto w-full">
+      <h1 className="text-3xl font-semibold tracking-tight mt-6">Kitchen</h1>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Card className="relative z-10">
-          <div className="flex items-center justify-between">
+      <div className="mt-4 grid gap-4">
+        {/* Meeting Recipes */}
+        <div className="rounded-2xl bg-white/80 dark:bg-zinc-900/70 border border-black/5 dark:border-white/10 p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-semibold">Meeting Recipes</h3>
               <p className="text-sm text-zinc-600 dark:text-zinc-300">
@@ -66,28 +62,29 @@ export default function KitchenHome() {
               </p>
             </div>
             <Link
-              href="/kitchen/recipes"
-              className="btn bg-sky-600 text-white hover:bg-sky-700"
+              href="#"
+              className="inline-flex items-center justify-center rounded-xl bg-sky-600 text-white px-4 py-2 text-sm font-medium hover:bg-sky-700"
             >
               Open
             </Link>
           </div>
-        </Card>
+        </div>
 
-        <Card className="relative z-10">
-          <div className="flex items-center justify-between opacity-90">
+        {/* Assets & Flyers */}
+        <div className="rounded-2xl bg-white/80 dark:bg-zinc-900/70 border border-black/5 dark:border-white/10 p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-4 opacity-90">
             <div>
               <h3 className="text-lg font-semibold">Assets & Flyers</h3>
               <p className="text-sm text-zinc-600 dark:text-zinc-300">
                 Shareables and downloadables.
               </p>
             </div>
-            <span className="btn bg-zinc-100 dark:bg-zinc-800 cursor-not-allowed select-none">
+            <span className="inline-flex items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 px-4 py-2 text-sm">
               Soon
             </span>
           </div>
-        </Card>
+        </div>
       </div>
-    </Page>
+    </div>
   );
 }
