@@ -40,7 +40,7 @@ export default function HomePage() {
       alert('Key sent! Check your inbox.');
     }
   }
-
+test
   return (
     <div className="px-4 md:px-6 lg:px-8 max-w-[1200px] mx-auto w-full">
       {/* Glass door hero visible only when NOT authed */}
