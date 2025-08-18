@@ -4,7 +4,6 @@
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import Link from 'next/link';
-import SetBiometricUnlock from '@/components/SetBiometricUnlock';  // 🔑 import new toggle
 
 export default function OfficePage() {
   const supa = supabaseBrowser();
@@ -51,13 +50,6 @@ export default function OfficePage() {
   return (
     <div className="w-full">
       <h1 className="text-3xl font-semibold tracking-tight mb-4">Office</h1>
-
-      {/* 🔑 Biometric toggle card right below header */}
-      <div className="mb-6">
-        <SetBiometricUnlock />
-      </div>
-
-      {/* Existing grid of Office tools */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Link
           href="/office/list-builder"
