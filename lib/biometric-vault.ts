@@ -9,6 +9,8 @@ type VaultBlob = {
   ct: string;     // base64
 };
 
+/* ---------------- helpers ---------------- */
+
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -37,6 +39,13 @@ function randomBytes(n: number): Uint8Array {
   crypto.getRandomValues(x);
   return x;
 }
+/** Some TS environments treat Uint8Array< ArrayBufferLike > as not a BufferSource.
+ *  Returning a **real ArrayBuffer** avoids the compile error on Vercel. */
+function newChallenge(): ArrayBuffer {
+  return randomBytes(32).buffer.slice(0); // force a plain ArrayBuffer
+}
+
+/* ---------------- tiny API ---------------- */
 
 export function isBiometricAvailable(): boolean {
   return typeof window !== 'undefined' && !!(window.PublicKeyCredential && navigator.credentials);
@@ -54,15 +63,14 @@ export function clearVault(): void {
 export async function createVault(secret: string): Promise<boolean> {
   if (!isBiometricAvailable()) throw new Error('Biometric/WebAuthn not available.');
 
-  // 1) Create platform credential
-  const challenge = randomBytes(32);      // BufferSource (Uint8Array) ✅
-  const userHandle = randomBytes(16);     // BufferSource for user.id ✅
+  // 1) Create a **platform** credential
+  const userHandle = randomBytes(16);
 
   const pubKey: PublicKeyCredentialCreationOptions = {
-    challenge, // <— use Uint8Array directly to satisfy BufferSource
+    challenge: newChallenge(), // ArrayBuffer ✅ BufferSource
     rp: { name: 'Freedom Family', id: window.location.hostname },
     user: {
-      id: userHandle,
+      id: userHandle,          // Uint8Array is fine here
       name: 'vault-user',
       displayName: 'Vault User',
     },
@@ -80,9 +88,9 @@ export async function createVault(secret: string): Promise<boolean> {
   if (!cred) throw new Error('Credential creation cancelled.');
   const credIdB64url = bytesToB64url(cred.rawId);
 
-  // 2) Get assertion to derive a key
+  // 2) Immediately assert to derive a key from signature material
   const getOpts: PublicKeyCredentialRequestOptions = {
-    challenge: randomBytes(32), // BufferSource ✅
+    challenge: newChallenge(), // ArrayBuffer ✅
     timeout: 60_000,
     rpId: window.location.hostname,
     allowCredentials: [{ id: cred.rawId, type: 'public-key' }],
@@ -92,12 +100,12 @@ export async function createVault(secret: string): Promise<boolean> {
   if (!assertion) throw new Error('Credential assertion failed.');
   const resp = assertion.response as AuthenticatorAssertionResponse;
 
-  // Derive AES key material from assertion signature
+  // Derive AES key from the signature bytes
   const material = new Uint8Array(resp.signature); // ArrayBuffer -> bytes
   const keyBytes = await crypto.subtle.digest('SHA-256', material);
   const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
 
-  // 3) Encrypt the secret
+  // 3) Encrypt and store
   const iv = randomBytes(12);
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, strToBytes(secret));
 
@@ -116,7 +124,7 @@ export async function unlockVault(): Promise<string> {
 
   const allowId = b64urlToBytes(blob.credId);
   const getOpts: PublicKeyCredentialRequestOptions = {
-    challenge: randomBytes(32), // BufferSource ✅
+    challenge: newChallenge(), // ArrayBuffer ✅
     timeout: 60_000,
     rpId: window.location.hostname,
     allowCredentials: [{ id: allowId, type: 'public-key' }],
@@ -137,7 +145,7 @@ export async function unlockVault(): Promise<string> {
   return new TextDecoder().decode(ptBuf);
 }
 
-// Aliases to match component imports
+/* ------- names your components already import ------- */
 export const setupBiometricVault = createVault;
 export const unlockBiometricVault = unlockVault;
 export const clearBiometricVault = clearVault;
