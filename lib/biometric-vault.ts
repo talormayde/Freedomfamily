@@ -39,17 +39,18 @@ export function isBiometricAvailable(): boolean {
   return typeof window !== 'undefined' && !!(window.PublicKeyCredential && navigator.credentials);
 }
 
-export async function createVault(secret: string): Promise<void> {
+export async function createVault(secret: string): Promise<boolean> {
   if (!isBiometricAvailable()) throw new Error('Biometric/WebAuthn not available.');
 
   // 1) Create platform credential
   const challenge = randomBytes(32);
   const userHandle = randomBytes(16);
   const pubKey: PublicKeyCredentialCreationOptions = {
-    challenge,
+    // Use ArrayBuffer to satisfy BufferSource
+    challenge: challenge.buffer,
     rp: { name: 'Freedom Family', id: window.location.hostname },
     user: {
-      id: userHandle,
+      id: userHandle, // Uint8Array is fine here
       name: 'vault-user',
       displayName: 'Vault User',
     },
@@ -69,7 +70,7 @@ export async function createVault(secret: string): Promise<void> {
 
   // 2) Get assertion to derive a key
   const getOpts: PublicKeyCredentialRequestOptions = {
-    challenge: randomBytes(32),
+    challenge: randomBytes(32).buffer, // ArrayBuffer again
     timeout: 60_000,
     rpId: window.location.hostname,
     allowCredentials: [{ id: cred.rawId, type: 'public-key' }],
@@ -78,8 +79,8 @@ export async function createVault(secret: string): Promise<void> {
   const assertion = (await navigator.credentials.get({ publicKey: getOpts })) as PublicKeyCredential | null;
   if (!assertion) throw new Error('Credential assertion failed.');
 
-  const resp = assertion.response as AuthenticatorAssertionResponse; // <- narrowing fix
-  const material = new Uint8Array(resp.signature);                   // ArrayBuffer -> key material
+  const resp = assertion.response as AuthenticatorAssertionResponse;
+  const material = new Uint8Array(resp.signature); // ArrayBuffer -> key material
 
   const keyBytes = await crypto.subtle.digest('SHA-256', material);
   const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
@@ -88,8 +89,9 @@ export async function createVault(secret: string): Promise<void> {
   const iv = randomBytes(12);
   const ctBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, strToBytes(secret));
 
-  const blob: VaultBlob = { credId: credIdB64url, iv: bytesToB64(iv), ct: bytesToB64(ctBuf) };
+  const blob: VaultBlob = { credId: credIdB64url, iv: bytesToB64(iv.buffer), ct: bytesToB64(ctBuf) };
   localStorage.setItem(VAULT_KEY, JSON.stringify(blob));
+  return true;
 }
 
 export async function unlockVault(): Promise<string> {
@@ -101,7 +103,7 @@ export async function unlockVault(): Promise<string> {
 
   const allowId = b64urlToBytes(blob.credId);
   const getOpts: PublicKeyCredentialRequestOptions = {
-    challenge: randomBytes(32),
+    challenge: randomBytes(32).buffer,
     timeout: 60_000,
     rpId: window.location.hostname,
     allowCredentials: [{ id: allowId, type: 'public-key' }],
@@ -110,7 +112,7 @@ export async function unlockVault(): Promise<string> {
   const assertion = (await navigator.credentials.get({ publicKey: getOpts })) as PublicKeyCredential | null;
   if (!assertion) throw new Error('Biometric assertion failed.');
 
-  const resp = assertion.response as AuthenticatorAssertionResponse; // <- narrowing fix
+  const resp = assertion.response as AuthenticatorAssertionResponse;
   const material = new Uint8Array(resp.signature);
 
   const keyBytes = await crypto.subtle.digest('SHA-256', material);
@@ -130,7 +132,7 @@ export function hasVault(): boolean {
   return !!localStorage.getItem(VAULT_KEY);
 }
 
-// -------- Aliases to match existing component imports (so builds stop failing) --------
+// ------- Aliases to match existing component imports -------
 export const setupBiometricVault = createVault;
 export const unlockBiometricVault = unlockVault;
 export const clearBiometricVault = clearVault;
