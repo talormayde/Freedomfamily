@@ -7,7 +7,7 @@ let _client: SupabaseClient | null = null;
  * Browser-side Supabase client:
  * - persists session in localStorage
  * - auto-refreshes access token
- * - handles magic-link URL (?code=...) with PKCE
+ * - handles magic-link URL (?code=...) with implicit
  */
 export function supabaseBrowser(): SupabaseClient {
   if (_client) return _client;
@@ -26,7 +26,7 @@ export function supabaseBrowser(): SupabaseClient {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce',
+      flowType: 'implicit',
     },
     // Ensure fetch is available in all runtimes
     global: { fetch: (...args) => fetch(...args) },
