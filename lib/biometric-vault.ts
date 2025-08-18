@@ -1,50 +1,45 @@
 // lib/biometric-vault.ts
 //
-// Lightweight, client-only "biometric vault" for PWAs.
-// - Stores a Supabase refresh token encrypted with AES-GCM.
-// - Uses a platform passkey (WebAuthn) as a *gate* to unlock.
-// - Derives the AES key from the stable WebAuthn credential ID.
-// - Avoids Vercel/TS BufferSource pitfalls by using real ArrayBuffers.
-//
-// Exports:
+// Client-only "biometric vault" for PWA convenience.
+// Exports the helpers your components expect:
 //   - isBiometricAvailable()
-//   - setupBiometricVault(refreshToken: string): Promise<boolean>
-//   - unlockBiometricVault(): Promise<string | null>
-//   - clearBiometricVault(): void
-//
-// Storage key: 'ff_biovault' in localStorage
+//   - hasVault()
+//   - setupBiometricVault(refreshToken)
+//   - unlockBiometricVault()
+//   - clearBiometricVault()
 
 type VaultRecord = {
-  credId: string;     // base64url of PublicKeyCredential.id
-  iv: string;         // base64url
-  ct: string;         // base64url
-  v: number;          // version
+  credId: string; // base64url credential id
+  iv: string;     // base64url
+  ct: string;     // base64url
+  v: number;      // schema version
 };
 
 const STORE_KEY = 'ff_biovault';
 const VAULT_VERSION = 1;
 
-/* ---------------- environment/feature guards ---------------- */
+/* ---------------- feature checks ---------------- */
 
 export function isBiometricAvailable(): boolean {
-  // Must be in a browser, secure context, with WebAuthn & WebCrypto available
   if (typeof window === 'undefined') return false;
   if (!('PublicKeyCredential' in window)) return false;
   if (!window.isSecureContext) return false;
   if (!('credentials' in navigator)) return false;
   if (!('crypto' in window) || !('subtle' in crypto)) return false;
-
-  // Optional: only enable for platforms that have a user-verifying platform authenticator
-  // We can't detect *presence*, but we can at least detect capability via isUserVerifyingPlatformAuthenticatorAvailable if present.
-  const anyWin = window as any;
-  if (typeof anyWin.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
-    // We return true optimistically; the actual boolean is async.
-    return true;
-  }
   return true;
 }
 
-/* ---------------- utils: base64url + buffers ---------------- */
+/** Do we have a vault blob stored on this device? */
+export function hasVault(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return !!localStorage.getItem(STORE_KEY);
+  } catch {
+    return false;
+  }
+}
+
+/* ---------------- base64url & buffers ---------------- */
 
 function toB64Url(bytes: ArrayBuffer | Uint8Array): string {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -62,37 +57,30 @@ function fromB64Url(b64url: string): Uint8Array {
   return out;
 }
 
-/** Return a *real* ArrayBuffer (not SharedArrayBuffer) with cryptographically random bytes. */
+/** Cryptographically random **ArrayBuffer** (not SharedArrayBuffer). */
 function randomArrayBuffer(len: number): ArrayBuffer {
   const buf = new ArrayBuffer(len);
   crypto.getRandomValues(new Uint8Array(buf));
   return buf;
 }
 
-/** Create a stable AES-GCM CryptoKey from a credential ID string. */
+/** Derive an AES-GCM key from a credential ID (SHA-256). */
 async function keyFromCredId(credIdB64Url: string): Promise<CryptoKey> {
-  // Derive 32 bytes from SHA-256(credId)
   const idBytes = fromB64Url(credIdB64Url);
   const digest = await crypto.subtle.digest('SHA-256', idBytes);
-  return crypto.subtle.importKey(
-    'raw',
-    digest,
-    { name: 'AES-GCM' },
-    false,                      // non-extractable
-    ['encrypt', 'decrypt']
-  );
+  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
-/* ---------------- storage helpers ---------------- */
+/* ---------------- storage ---------------- */
 
 function readVault(): VaultRecord | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as VaultRecord;
-    if (!parsed || typeof parsed.credId !== 'string') return null;
-    return parsed;
+    const rec = JSON.parse(raw) as VaultRecord;
+    if (!rec?.credId) return null;
+    return rec;
   } catch {
     return null;
   }
@@ -107,80 +95,61 @@ export function clearBiometricVault() {
   localStorage.removeItem(STORE_KEY);
 }
 
-/* ---------------- WebAuthn registration (setup) ---------------- */
+/* ---------------- setup (register + encrypt) ---------------- */
 
 export async function setupBiometricVault(refreshToken: string): Promise<boolean> {
   if (!isBiometricAvailable()) {
-    alert('Biometric unlock is not available in this browser / context.');
+    alert('Biometric unlock is not available on this device/browser.');
     return false;
   }
 
-  // If already set up, just overwrite with the new token (rotate).
   const existing = readVault();
   let credIdB64Url: string | null = existing?.credId ?? null;
 
-  // If no credential yet, register a new platform passkey
   if (!credIdB64Url) {
-    const challenge = randomArrayBuffer(32); // plain ArrayBuffer
-    // Random user handle (16 bytes)
+    // Register a platform authenticator (passkey)
+    const challenge = randomArrayBuffer(32); // ArrayBuffer satisfies BufferSource
     const userHandle = new Uint8Array(16);
     crypto.getRandomValues(userHandle);
 
     const pubKey: PublicKeyCredentialCreationOptions = {
-      challenge, // BufferSource (we provided ArrayBuffer)
-      rp: {
-        name: 'Freedom Family',
-        id: window.location.hostname, // ensures passkey is bound to your domain
-      },
-      user: {
-        id: userHandle,                       // BufferSource
-        name: 'ff-user',                      // arbitrary label
-        displayName: 'Freedom Family User',   // arbitrary label
-      },
+      challenge,
+      rp: { name: 'Freedom Family', id: window.location.hostname },
+      user: { id: userHandle, name: 'ff-user', displayName: 'Freedom Family User' },
       pubKeyCredParams: [
-        // Support common algs; -7 (ES256), -257 (RS256)
-        { type: 'public-key', alg: -7 },
-        { type: 'public-key', alg: -257 },
+        { type: 'public-key', alg: -7 },   // ES256
+        { type: 'public-key', alg: -257 }, // RS256
       ],
       authenticatorSelection: {
-        authenticatorAttachment: 'platform', // prefer device biometrics
+        authenticatorAttachment: 'platform',
         userVerification: 'required',
         requireResidentKey: false,
       },
-      timeout: 60_000,
       attestation: 'none',
+      timeout: 60_000,
     };
 
-    const credential = (await navigator.credentials.create({ publicKey: pubKey })) as PublicKeyCredential | null;
-    if (!credential) {
-      alert('Biometric registration was cancelled.');
+    const cred = (await navigator.credentials.create({ publicKey: pubKey })) as PublicKeyCredential | null;
+    if (!cred) {
+      alert('Biometric registration cancelled.');
       return false;
     }
-
-    // Save the stable credential ID (base64url)
-    credIdB64Url = toB64Url(credential.rawId);
+    credIdB64Url = toB64Url(cred.rawId);
   }
 
-  // Derive AES key from credId and encrypt the refresh token
+  // Encrypt refresh token with AES-GCM derived from credId
   const key = await keyFromCredId(credIdB64Url);
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
 
-  const enc = new TextEncoder();
-  const pt = enc.encode(refreshToken);
+  const pt = new TextEncoder().encode(refreshToken);
   const ctBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, pt);
 
-  writeVault({
-    credId: credIdB64Url,
-    iv: toB64Url(iv),
-    ct: toB64Url(ctBuf),
-    v: VAULT_VERSION,
-  });
-
+  writeVault({ credId: credIdB64Url, iv: toB64Url(iv), ct: toB64Url(ctBuf), v: VAULT_VERSION });
   return true;
 }
 
-/* ---------------- WebAuthn assertion (unlock) ---------------- */
+/* ---------------- unlock (assert + decrypt) ---------------- */
 
 export async function unlockBiometricVault(): Promise<string | null> {
   if (!isBiometricAvailable()) return null;
@@ -191,43 +160,33 @@ export async function unlockBiometricVault(): Promise<string | null> {
     return null;
   }
 
-  // Require a successful biometric assertion *for this credential ID*
+  // Require a successful user verification for the stored credential
   const challenge = randomArrayBuffer(32);
   const allow: PublicKeyCredentialDescriptor[] = [
-    {
-      type: 'public-key',
-      id: fromB64Url(rec.credId).buffer, // BufferSource (ArrayBuffer)
-      // transports optional
-    },
+    { type: 'public-key', id: fromB64Url(rec.credId).buffer },
   ];
 
   const options: PublicKeyCredentialRequestOptions = {
     challenge,
     allowCredentials: allow,
     userVerification: 'required',
-    timeout: 60_000,
     rpId: window.location.hostname,
+    timeout: 60_000,
   };
 
   const assertion = (await navigator.credentials.get({ publicKey: options })) as PublicKeyCredential | null;
-  if (!assertion) {
-    // User cancelled prompt
-    return null;
-  }
+  if (!assertion) return null; // user cancelled
 
-  // If we reached here, the platform verified biometrics/UV for the stored credential.
-  // Now derive AES key from credId and decrypt the token.
-  const key = await keyFromCredId(rec.credId);
-  const iv = fromB64Url(rec.iv);
-  const ct = fromB64Url(rec.ct);
-
+  // Derive key & decrypt
   try {
+    const key = await keyFromCredId(rec.credId);
+    const iv = fromB64Url(rec.iv);
+    const ct = fromB64Url(rec.ct);
     const ptBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-    const dec = new TextDecoder();
-    return dec.decode(ptBuf);
+    return new TextDecoder().decode(ptBuf);
   } catch (e) {
     console.error('Vault decrypt failed:', e);
-    alert('Could not unlock vault (data corrupted or key mismatch). Try re-enabling Quick Unlock.');
+    alert('Could not unlock. Try re-enabling Quick Unlock.');
     return null;
   }
 }
