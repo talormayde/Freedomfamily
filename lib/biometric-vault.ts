@@ -1,5 +1,5 @@
 // lib/biometric-vault.ts
-// Stores the refresh_token encrypted with a WebAuthn-bound key
+// Stores the Supabase refresh_token encrypted behind Face ID / Touch ID (WebAuthn + WebCrypto)
 
 const VAULT_DB = 'ff_bio_vault';
 const VAULT_KEY = 'refresh_token';
@@ -35,14 +35,19 @@ async function get<T>(key: string): Promise<T | undefined> {
 }
 
 export async function isBiometricAvailable() {
-  if (!window.PublicKeyCredential) return false;
-  return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  if (!('PublicKeyCredential' in window)) return false;
+  try {
+    // Some browsers throw in private mode
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
 }
 
 export async function setupBiometricVault(refreshToken: string) {
   if (!(await isBiometricAvailable())) return false;
 
-  // 1) Create a platform credential (prompts FaceID/TouchID)
+  // 1) Create a platform authenticator credential (prompts Face ID / Touch ID).
   const cred = (await navigator.credentials.create({
     publicKey: {
       rp: { id: window.location.hostname, name: 'Freefam' },
@@ -58,12 +63,9 @@ export async function setupBiometricVault(refreshToken: string) {
   })) as PublicKeyCredential | null;
 
   if (!cred) return false;
-
   const credId = cred.rawId;
 
-  // 2) Derive a symmetric key from the platform authenticator (via WebCrypto subtle key agreement surrogate)
-  // Simpler approach: use the platform auth as a “gate” with an assertion, and use a random AES key stored
-  // alongside credId but wrapped with the assertion. For brevity we’ll derive a key from the assertion bytes.
+  // 2) Prompt the user (Face ID / Touch ID) to get an assertion we’ll use as key material.
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -76,7 +78,7 @@ export async function setupBiometricVault(refreshToken: string) {
   const keyBytes = await crypto.subtle.digest('SHA-256', material);
   const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
 
-  // 3) Encrypt and store the refresh token in IndexedDB
+  // 3) Encrypt and store the refresh token.
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const cipher = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
@@ -93,7 +95,7 @@ export async function unlockBiometricVault(): Promise<string | null> {
   const record = await get<VaultRecord>(VAULT_KEY);
   if (!record) return null;
 
-  // Ask FaceID/TouchID to release assertion for the stored credential
+  // Ask for biometric again to derive the same key.
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
