@@ -1,3 +1,4 @@
+// components/SetBiometricUnlock.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -25,9 +26,12 @@ export default function SetBiometricUnlock() {
     setBusy(true);
     try {
       const { data: { session } } = await supa.auth.getSession();
-      const token = session?.access_token ?? 'ok:' + crypto.randomUUID();
-      await setupBiometricVault(token);
-      setEnabled(true);
+      if (!session?.refresh_token) {
+        alert('Sign in first, then enable.');
+        return;
+      }
+      const ok = await setupBiometricVault(session.refresh_token);
+      setEnabled(!!ok); // ok is true from the lib
     } catch (e: any) {
       alert(e?.message || 'Failed to enable Quick Unlock.');
     } finally {
@@ -47,8 +51,7 @@ export default function SetBiometricUnlock() {
 
   async function testUnlock() {
     try {
-      const secret = await unlockBiometricVault();
-      console.log('Unlocked secret (preview):', secret.slice(0, 8) + '…');
+      await unlockBiometricVault();
       alert('Quick Unlock works on this device ✅');
     } catch (e: any) {
       alert(e?.message || 'Unlock failed.');
@@ -88,10 +91,7 @@ export default function SetBiometricUnlock() {
 
       {enabled && (
         <div className="mt-3">
-          <button
-            onClick={testUnlock}
-            className="text-xs underline text-zinc-600 dark:text-zinc-400"
-          >
+          <button onClick={testUnlock} className="text-xs underline text-zinc-600 dark:text-zinc-400">
             Test unlock on this device
           </button>
         </div>
