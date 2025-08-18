@@ -1,35 +1,22 @@
 // lib/supabase-browser.ts
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-let _client: ReturnType<typeof createBrowserClient> | null = null;
+let _client: SupabaseClient | null = null;
 
-/**
- * Browser-side Supabase client:
- * - persists session in localStorage
- * - auto-refreshes access token
- * - handles magic-link URL (?code=...)
- */
-export function supabaseBrowser() {
+export function supabaseBrowser(): SupabaseClient {
   if (_client) return _client;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {
-    // Hard fail early so we see it during dev/build
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY are required.');
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
   }
 
-  _client = createBrowserClient(url, anon, {
-    cookies: {
-      // Not used in the browser — required by type
-      get: () => '',
-    },
+  _client = createClient(url, anon, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce',
     },
   });
 
