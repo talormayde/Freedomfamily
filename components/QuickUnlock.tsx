@@ -1,40 +1,44 @@
-// components/QuickUnlock.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { unlockBiometricVault, isBiometricAvailable } from '@/lib/biometric-vault';
+import { unlockBiometricVault, isBiometricAvailable, hasVault } from '@/lib/biometric-vault';
 
 export default function QuickUnlock() {
   const supa = supabaseBrowser();
-  const [visible, setVisible] = useState(false);
+  const [canUse, setCanUse] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
 
   useEffect(() => {
-    // Only render if Face ID / Touch ID is supported and we have a vault
-    (async () => {
-      if (!(await isBiometricAvailable())) return;
-      const rt = await unlockBiometricVault(); // probe
-      setVisible(!!rt);
-    })();
+    setCanUse(isBiometricAvailable() && hasVault());
   }, []);
 
-  if (!visible) return null;
+  async function doUnlock() {
+    setBusy(true);
+    try {
+      const secret = await unlockBiometricVault();
+      // If you later store a refresh_token, you could call supa.auth.setSession({ ... })
+      // For now, this serves as a “fast unlock” check & future hook.
+      console.log('Unlocked secret (preview):', secret.slice(0, 8) + '…');
+      setOk(true);
+    } catch (e: any) {
+      alert(e?.message || 'Unlock failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canUse) return null;
 
   return (
     <button
-      onClick={async () => {
-        setBusy(true);
-        const rt = await unlockBiometricVault();
-        if (!rt) { setBusy(false); alert('Biometric unlock is not set up yet.'); return; }
-        const { data, error } = await supa.auth.refreshSession({ refresh_token: rt });
-        setBusy(false);
-        if (error || !data.session) { alert(error?.message || 'Could not restore session'); return; }
-        window.location.href = '/office';
-      }}
-      className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+      onClick={doUnlock}
+      disabled={busy}
+      className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 text-white px-3 py-2 text-sm dark:bg-white dark:text-zinc-900"
+      title="Unlock with biometrics"
     >
-      {busy ? 'Unlocking…' : 'Unlock with Face ID'}
+      {ok ? 'Unlocked ✓' : busy ? 'Unlocking…' : 'Quick Unlock'}
     </button>
   );
 }
