@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { Upload, Play, Pencil, Trash2, Loader2 } from 'lucide-react';
 
-/** Pipeline steps (dropdowns) */
 const STEPS = [
   'Connection','Phone Call','PQI','QI 1','QI 2',
   'Info Session – 1st Look','Follow Up – 1',
@@ -22,11 +21,11 @@ type Prospect = {
   last_name: string | null;
   phone: string | null;
   email: string | null;
-  source: 'A'|'B'|'C'|null;         // <- replaces legacy "list"
+  source: 'A'|'B'|'C'|null;
   looking: string | null;
   last_step: Step | null;
   next_step: Step | null;
-  due_date: string | null;          // YYYY-MM-DD
+  due_date: string | null;
   notes: string | null;
   updated_at: string;
 };
@@ -39,8 +38,9 @@ export default function ListBuilderPage() {
   const [loading, setLoading] = useState(true);
 
   // filters
-  const [q, setQ] = useState('');
+  const [query, setQuery] = useState('');
   const [src, setSrc] = useState<''|'A'|'B'|'C'>('');
+  const [stage, setStage] = useState<''|Step>('');
 
   // selection / modals
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -67,27 +67,36 @@ export default function ListBuilderPage() {
   }, [supa]);
 
   const filtered = useMemo(() => {
-    const k = q.trim().toLowerCase();
+    const k = query.trim().toLowerCase();
     return rows.filter(r => {
-      const blob = [r.first_name, r.last_name, r.phone, r.email, r.notes].join(' ').toLowerCase();
+      const blob = [r.first_name, r.last_name, r.phone, r.email, r.notes]
+        .join(' ').toLowerCase();
       const okQ = k ? blob.includes(k) : true;
       const okS = src ? r.source === src : true;
-      return okQ && okS;
+      const okStage = stage ? (r.last_step === stage || r.next_step === stage) : true;
+      return okQ && okS && okStage;
     });
-  }, [rows, q, src]);
+  }, [rows, query, src, stage]);
 
-  function toggleAll(v: boolean) {
+  const selectedIds = Object.entries(sel).filter(([_,v])=>v).map(([k])=>k);
+  const toggleAll = (v:boolean) => {
     const next: Record<string, boolean> = {};
-    filtered.forEach(r => { next[r.id] = v; });
+    filtered.forEach(r => next[r.id] = v);
     setSel(next);
-  }
+  };
 
   async function saveProspect(p: Partial<Prospect> & { id?: string }) {
     if (!uid) return;
+
+    // compute full_name to satisfy DB constraint
+    const first = (p.first_name ?? '').trim();
+    const last  = (p.last_name ?? '').trim();
+    const full_name = `${first} ${last}`.trim();
+
     const clean = {
       owner_id: uid,
-      first_name: p.first_name ?? '',
-      last_name:  p.last_name ?? '',
+      first_name: first,
+      last_name:  last,
       phone:      p.phone ?? '',
       email:      p.email ?? '',
       source:     (p.source ?? null) as any,
@@ -96,7 +105,9 @@ export default function ListBuilderPage() {
       next_step:  p.next_step ?? null,
       due_date:   p.due_date ?? null,
       notes:      p.notes ?? '',
+      full_name, // <— NEW
     };
+
     if (p.id) {
       const { data, error } = await supa.from('prospects').update(clean).eq('id', p.id).select('*').single();
       if (error) return alert(error.message);
@@ -116,45 +127,57 @@ export default function ListBuilderPage() {
     setRows(prev => prev.filter(r => r.id !== id));
   }
 
-  async function importCSV(rowsIn: ProspectCSVRow[]) {
-    if (!uid) return;
-    if (!rowsIn.length) return;
-    const payload = rowsIn.map(r => ({
-      owner_id: uid,
-      first_name: r.first_name || '',
-      last_name:  r.last_name || '',
-      phone:      r.phone || '',
-      email:      r.email || '',
-      source:     (r.source as any) ?? null,
-      looking:    r.looking || null,
-      last_step:  (r.last_step as Step) || null,
-      next_step:  (r.next_step as Step) || null,
-      due_date:   r.due_date || null,
-      notes:      r.notes || '',
-    }));
-    const { error } = await supa.from('prospects').insert(payload);
-    if (error) return alert(error.message);
-    const { data } = await supa
-      .from('prospects')
-      .select('id, owner_id, first_name, last_name, phone, email, source, looking, last_step, next_step, due_date, notes, updated_at')
-      .eq('owner_id', uid)
-      .order('updated_at', { ascending: false });
-    setRows((data ?? []) as Prospect[]);
-    setImportOpen(false);
+  // Import: CSV and (where supported) Contact Picker API
+  async function importCSVOrContacts() {
+    // If Contact Picker API exists, let user pick device contacts (supported in iOS 17+/Safari 17+)
+    const navAny = navigator as any;
+    if (navAny.contacts?.select) {
+      try {
+        const props = ['name', 'tel', 'email'] as const;
+        const res = await navAny.contacts.select(props, { multiple: true });
+        if (Array.isArray(res) && res.length) {
+          const payload = res.map((c: any) => {
+            const [first, ...rest] = (c.name?.[0] || '').split(' ');
+            const last = rest.join(' ');
+            return {
+              owner_id: uid,
+              first_name: first || '',
+              last_name: last || '',
+              phone: (c.tel?.[0] || ''),
+              email: (c.email?.[0] || ''),
+              source: null,
+              looking: null,
+              last_step: null,
+              next_step: null,
+              due_date: null,
+              notes: '',
+              full_name: `${first || ''} ${last || ''}`.trim(),
+            };
+          });
+          const { error } = await supa.from('prospects').insert(payload);
+          if (error) return alert(error.message);
+          const { data } = await supa
+            .from('prospects')
+            .select('id, owner_id, first_name, last_name, phone, email, source, looking, last_step, next_step, due_date, notes, updated_at')
+            .eq('owner_id', uid)
+            .order('updated_at', { ascending: false });
+          setRows((data ?? []) as Prospect[]);
+          return;
+        }
+      } catch (e) {
+        // fall through to CSV modal
+      }
+    }
+    setImportOpen(true); // fallback to CSV modal
   }
-
-  if (!uid) return <div className="p-6 text-zinc-500">Please sign in.</div>;
-  if (loading) return <div className="p-6 text-zinc-500">Loading…</div>;
-
-  const selectedIds = Object.entries(sel).filter(([_,v])=>v).map(([k])=>k);
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 max-w-[1300px] mx-auto w-full">
       <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
         <h1 className="text-3xl font-semibold tracking-tight">List Builder</h1>
         <div className="flex items-center gap-2">
-          <button onClick={()=>setImportOpen(true)} className="glassbtn inline-flex items-center gap-2">
-            <Upload className="h-4 w-4" /> Import CSV
+          <button onClick={importCSVOrContacts} className="glassbtn inline-flex items-center gap-2">
+            <Upload className="h-4 w-4" /> Import
           </button>
           <Link
             href={selectedIds.length ? `/office/outreach/sequence?ids=${selectedIds.join(',')}` : '#'}
@@ -166,17 +189,26 @@ export default function ListBuilderPage() {
         </div>
       </div>
 
-      {/* Filter bar (liquid glass) */}
+      {/* Sales-first filter bar */}
       <div className="mt-4 rounded-[20px] border border-white/60 dark:border-white/10 bg-white/60 dark:bg-white/5 backdrop-blur-xl ring-1 ring-black/5 p-3 sm:p-4">
-        <div className="grid gap-3 md:grid-cols-[200px_1fr_160px_auto_auto] items-center">
-          <select value={src} onChange={e=>setSrc(e.target.value as any)} className="glassfld">
-            <option value="">Source (A/B/C)</option>
-            <option value="A">A-List</option><option value="B">B-List</option><option value="C">C-List</option>
+        <div className="grid gap-3 md:grid-cols-[200px_200px_1fr_auto_auto] items-center">
+          {/* quick chips */}
+          <div className="flex gap-2">
+            {(['','A','B','C'] as const).map(s => (
+              <button key={s}
+                className={`glassbtn px-3 py-1.5 ${src===s ? 'ring-2 ring-sky-400/60' : ''}`}
+                onClick={()=>setSrc(s)}>
+                {s ? `${s}-List` : 'All'}
+              </button>
+            ))}
+          </div>
+          <select className="glassfld" value={stage} onChange={e=>setStage(e.target.value as any)}>
+            <option value="">Any stage</option>
+            {STEPS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search name / phone / email / notes…" className="glassfld" />
-          <div />
+          <input className="glassfld" placeholder="Search name / phone / email / notes…" value={query} onChange={e=>setQuery(e.target.value)} />
           <button className="glassbtn-primary">Apply</button>
-          <button onClick={()=>{ setQ(''); setSrc(''); }} className="glassbtn">Reset</button>
+          <button className="glassbtn" onClick={()=>{ setQuery(''); setSrc(''); setStage(''); }}>Reset</button>
         </div>
       </div>
 
@@ -194,59 +226,55 @@ export default function ListBuilderPage() {
           <div>Contact</div><div>Actions</div>
         </div>
 
-        {filtered.map(r => (
-          <div key={r.id} className="grid grid-cols-[42px_1.1fr_.6fr_.8fr_.9fr_.9fr_.9fr_1fr_120px] gap-3 items-center px-3 py-2 border-t border-white/40 dark:border-white/10">
-            <div><input type="checkbox" checked={!!sel[r.id]} onChange={(e)=>setSel(prev=>({ ...prev, [r.id]: e.target.checked }))}/></div>
-            <div className="truncate">
-              <div className="font-medium">{[r.first_name, r.last_name].filter(Boolean).join(' ') || '—'}</div>
+        {loading ? (
+          <div className="p-6 text-zinc-500 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-6 text-zinc-500">No matches.</div>
+        ) : (
+          filtered.map(r => (
+            <div key={r.id} className="grid grid-cols-[42px_1.1fr_.6fr_.8fr_.9fr_.9fr_.9fr_1fr_120px] gap-3 items-center px-3 py-2 border-t border-white/40 dark:border-white/10">
+              <div><input type="checkbox" checked={!!sel[r.id]} onChange={(e)=>setSel(prev=>({ ...prev, [r.id]: e.target.checked }))}/></div>
+              <div className="truncate">
+                <div className="font-medium">{[r.first_name, r.last_name].filter(Boolean).join(' ') || '—'}</div>
+              </div>
+              <div>{r.source || '—'}</div>
+              <div className="capitalize">{r.looking || '—'}</div>
+              <div className="truncate">{r.last_step || '—'}</div>
+              <div className="truncate">{r.next_step || '—'}</div>
+              <div className="truncate">{r.due_date || '—'}</div>
+              <div className="truncate">
+                {r.phone ? <a className="underline" href={`tel:${r.phone}`}>{r.phone}</a> : '—'}
+                {r.email ? <span> · <a className="underline" href={`mailto:${r.email}`}>{r.email}</a></span> : ''}
+              </div>
+              <div className="flex items-center gap-2">
+                <button className="icobtn" title="Edit" onClick={()=>setEditing(r)}><Pencil className="h-4 w-4" /></button>
+                <button className="icobtn danger" title="Delete" onClick={()=>removeProspect(r.id)}><Trash2 className="h-4 w-4" /></button>
+              </div>
             </div>
-            <div>{r.source || '—'}</div>
-            <div className="capitalize">{r.looking || '—'}</div>
-            <div className="truncate">{r.last_step || '—'}</div>
-            <div className="truncate">{r.next_step || '—'}</div>
-            <div className="truncate">{r.due_date || '—'}</div>
-            <div className="truncate">
-              {r.phone ? <a className="underline" href={`tel:${r.phone}`}>{r.phone}</a> : '—'}
-              {r.email ? <span> · <a className="underline" href={`mailto:${r.email}`}>{r.email}</a></span> : ''}
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="icobtn" title="Edit" onClick={()=>setEditing(r)}><Pencil className="h-4 w-4" /></button>
-              <button className="icobtn danger" title="Delete" onClick={()=>removeProspect(r.id)}><Trash2 className="h-4 w-4" /></button>
-            </div>
-          </div>
-        ))}
-
-        {filtered.length === 0 && <div className="p-6 text-zinc-500">No matches.</div>}
+          ))
+        )}
       </div>
 
       {/* Editor */}
       {editing && <EditModal value={editing} onClose={()=>setEditing(null)} onSave={saveProspect} />}
 
       {/* Importer */}
-      {importOpen && <ImportCSVModal onClose={()=>setImportOpen(false)} onImport={importCSV} />}
-
-      {/* Glass utilities for consistent finish */}
+      {importOpen && <ImportModal onClose={()=>setImportOpen(false)} onImportDone={()=>setImportOpen(false)} />}
+      
+      {/* Glass utilities */}
       <style jsx global>{`
-        .glassbtn {
-          @apply rounded-xl px-4 py-2 border border-white/60 dark:border-white/10 bg-white/50 dark:bg-white/10 backdrop-blur shadow-sm ring-1 ring-black/5 hover:bg-white/70 transition;
-        }
-        .glassbtn-primary {
-          @apply rounded-xl px-4 py-2 bg-sky-600 text-white shadow-[0_6px_18px_rgba(2,132,199,0.35)] hover:bg-sky-700 transition;
-        }
-        .glassfld {
-          @apply h-11 w-full rounded-xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/10 px-3 backdrop-blur focus:outline-none focus:ring-2 focus:ring-sky-400/60;
-        }
-        .icobtn {
-          @apply grid place-items-center h-9 w-9 rounded-xl border border-white/60 dark:border-white/10 bg-white/60 dark:bg-white/10 backdrop-blur hover:bg-white/80 ring-1 ring-black/5;
-        }
-        .icobtn.danger { @apply border-red-200/60 bg-red-50/60 text-red-700 hover:bg-red-100; }
+        .glassbtn{ @apply rounded-xl px-4 py-2 border border-white/60 dark:border-white/10 bg-white/50 dark:bg-white/10 backdrop-blur ring-1 ring-black/5 hover:bg-white/70 transition; }
+        .glassbtn-primary{ @apply rounded-xl px-4 py-2 bg-sky-600 text-white shadow-[0_6px_18px_rgba(2,132,199,0.35)] hover:bg-sky-700 transition; }
+        .glassfld{ @apply h-11 w-full rounded-xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/10 px-3 backdrop-blur focus:outline-none focus:ring-2 focus:ring-sky-400/60; }
+        .icobtn{ @apply grid place-items-center h-9 w-9 rounded-xl border border-white/60 dark:border-white/10 bg-white/60 dark:bg-white/10 backdrop-blur hover:bg-white/80 ring-1 ring-black/5; }
+        .icobtn.danger{ @apply border-red-200/60 bg-red-50/60 text-red-700 hover:bg-red-100; }
       `}</style>
     </div>
   );
 }
 
-/* ---------- Edit Modal ---------- */
-function EditModal({ value, onClose, onSave }: {
+/* --------- Edit Modal --------- */
+function EditModal({ value, onClose, onSave }:{
   value: Partial<Prospect>;
   onClose: () => void;
   onSave: (v: Partial<Prospect> & { id?: string }) => void;
@@ -267,8 +295,8 @@ function EditModal({ value, onClose, onSave }: {
 
   return (
     <div className="fixed inset-0 z-[500] grid place-items-center p-4">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-3xl rounded-[22px] border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/10 backdrop-blur-xl ring-1 ring-black/5 p-5 sm:p-6">
+      <div className="absolute inset-0 bg-black/35" onClick={onClose} />
+      <div className="relative w-full max-w-3xl rounded-[22px] border border-white/60 dark:border-white/10 bg-white/75 dark:bg-white/10 backdrop-blur-2xl ring-1 ring-black/5 p-5 sm:p-6 shadow-[0_12px_60px_rgba(0,0,0,0.20)]">
         <h3 className="text-lg font-semibold">{draft.id ? 'Edit Prospect' : 'Add Prospect'}</h3>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -325,54 +353,65 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/* ---------- CSV Import ---------- */
-type ProspectCSVRow = {
-  first_name?: string; last_name?: string; phone?: string; email?: string;
-  source?: 'A'|'B'|'C'; looking?: string; last_step?: string; next_step?: string;
-  due_date?: string; notes?: string;
-};
+/* ---------- Import Modal (CSV) ---------- */
 
-function ImportCSVModal({ onClose, onImport }: {
-  onClose: () => void;
-  onImport: (rows: ProspectCSVRow[]) => void;
-}) {
-  const [rows, setRows] = useState<ProspectCSVRow[]>([]);
+function ImportModal({ onClose, onImportDone }: { onClose: () => void; onImportDone: () => void; }) {
+  const supa = supabaseBrowser();
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function handleFile(file: File) {
+  async function handleImport() {
+    if (!file) return;
     try {
-      setErr(null);
+      setBusy(true); setErr(null);
       const text = await file.text();
       const [head, ...lines] = text.split(/\r?\n/).filter(Boolean);
       const cols = head.split(',').map(c => c.trim().toLowerCase());
-      const out: ProspectCSVRow[] = lines.map(line => {
+      const rows = lines.map(line => {
         const cells = line.split(',');
         const rec: any = {};
         cols.forEach((c, i) => rec[c] = (cells[i] ?? '').trim());
-        return rec;
+        const first = (rec.first_name || '').trim();
+        const last  = (rec.last_name || '').trim();
+        return {
+          first_name:first,
+          last_name:last,
+          phone:rec.phone||'',
+          email:rec.email||'',
+          source:rec.source||null,
+          looking:rec.looking||null,
+          last_step:rec.last_step||null,
+          next_step:rec.next_step||null,
+          due_date:rec.due_date||null,
+          notes:rec.notes||'',
+          full_name:`${first} ${last}`.trim(),
+        };
       });
-      setRows(out.slice(0, 2000));
-    } catch (e: any) {
-      setErr(e?.message || 'Could not parse CSV.');
+      const { error } = await supa.from('prospects').insert(rows);
+      setBusy(false);
+      if (error) return setErr(error.message);
+      onImportDone();
+      window.location.reload();
+    } catch (e:any) {
+      setBusy(false); setErr(e?.message || 'Import failed.');
     }
   }
 
   return (
     <div className="fixed inset-0 z-[510] grid place-items-center p-4">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-3xl rounded-[22px] border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/10 backdrop-blur-xl ring-1 ring-black/5 p-5 sm:p-6">
+      <div className="absolute inset-0 bg-black/35" onClick={onClose} />
+      <div className="relative w-full max-w-2xl rounded-[22px] border border-white/60 dark:border-white/10 bg-white/75 dark:bg-white/10 backdrop-blur-2xl ring-1 ring-black/5 p-5 sm:p-6 shadow-[0_12px_60px_rgba(0,0,0,0.20)]">
         <h3 className="text-lg font-semibold">Import Contacts (CSV)</h3>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Columns: <code>first_name,last_name,phone,email,source(A/B/C),looking,last_step,next_step,due_date,notes</code>
         </p>
         <div className="mt-3 flex items-center gap-3">
-          <input type="file" accept=".csv,text/csv" onChange={(e)=>{ const f = e.target.files?.[0]; if (f) void handleFile(f); }} />
-          <button disabled={!rows.length} onClick={()=>onImport(rows)} className="glassbtn-primary">
-            Import {rows.length ? `(${rows.length})` : ''}
-          </button>
+          <input type="file" accept=".csv,text/csv" onChange={(e)=>setFile(e.target.files?.[0] ?? null)} />
+          <button disabled={!file || busy} onClick={handleImport} className="glassbtn-primary">{busy ? 'Importing…' : 'Import'}</button>
           <button onClick={onClose} className="glassbtn">Close</button>
         </div>
-        {!!err && <div className="mt-2 text-red-600 text-sm">{err}</div>}
+        {!!err && <div className="mt-2 text-sm text-red-600">{err}</div>}
       </div>
     </div>
   );
