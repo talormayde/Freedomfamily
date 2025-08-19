@@ -4,519 +4,376 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { Pencil, Trash2, Plus, Loader2, Play } from 'lucide-react';
+import { Upload, Play, Pencil, Trash2, Loader2 } from 'lucide-react';
 
-// ---------------- Types ----------------
+/** Pipeline steps (dropdowns) */
+const STEPS = [
+  'Connection','Phone Call','PQI','QI 1','QI 2',
+  'Info Session – 1st Look','Follow Up – 1',
+  'Info Session – 2nd Look','Follow Up – 2',
+  'Info Session – 3rd Look','GSM (Getting Started Meeting)','Launch'
+] as const;
+type Step = typeof STEPS[number];
+
 type Prospect = {
   id: string;
-  user_id: string | null;
+  owner_id: string;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
   email: string | null;
-  age: number | null;
-  list: 'A'|'B'|'C'|null;
-  how_known: string | null;
-  location: string | null;
-  relationship_status:
-    | 'single' | 'dating' | 'engaged' | 'married'
-    | 'single_with_kids' | 'married_with_kids' | 'unknown' | null;
-  date_of_connection: string | null;  // YYYY-MM-DD
-  looking: 'looker'|'non-looker'|'learner'|'no_ones_home'|'curious'|'pending'|null;
-  last_step: string | null;
-  last_step_date: string | null;      // YYYY-MM-DD
-  next_step: string | null;
-  due_date: string | null;            // YYYY-MM-DD
+  source: 'A'|'B'|'C'|null;         // <- replaces legacy "list"
+  looking: string | null;
+  last_step: Step | null;
+  next_step: Step | null;
+  due_date: string | null;          // YYYY-MM-DD
   notes: string | null;
-  created_at: string;
+  updated_at: string;
 };
 
-const LIST = ['A','B','C'] as const;
-const REL = ['single','dating','engaged','married','single_with_kids','married_with_kids','unknown'] as const;
-const LOOK = ['looker','non-looker','learner','no_ones_home','curious','pending'] as const;
-const STEPS = ['Phone Call','PQI','QI1','QI2','1st Look','Follow Up 1','2nd Look','Follow Up 2','3rd Look','Follow Up 3','GSM','Transition to Customer'] as const;
-
-type FilterField =
-  | 'list' | 'relationship_status' | 'looking'
-  | 'last_step' | 'next_step' | 'location' | 'age';
-type DueFilter = 'Any' | 'Overdue' | 'Today' | 'Upcoming';
-
-// --------------- Page ------------------
-export default function ListBuilder() {
+export default function ListBuilderPage() {
   const supa = supabaseBrowser();
+
+  const [uid, setUid] = useState<string | null>(null);
   const [rows, setRows] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string|null>(null);
 
   // filters
-  const [search, setSearch] = useState('');
-  const [due, setDue] = useState<DueFilter>('Any');
-  const [filter, setFilter] = useState<{field: FilterField; value: string}>({ field: 'list', value: '' });
+  const [q, setQ] = useState('');
+  const [src, setSrc] = useState<''|'A'|'B'|'C'>('');
 
-  // selection (for sequences / bulk actions)
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  // selection / modals
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const [editing, setEditing] = useState<Prospect | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
-  // modal state
-  const [editing, setEditing] = useState<Prospect|{id?: string}|null>(null);
-
-  // load data
   useEffect(() => {
     (async () => {
-      setLoading(true); setErrorMsg(null);
+      const { data: { session } } = await supa.auth.getSession();
+      const me = session?.user?.id ?? null;
+      setUid(me);
+      if (!me) { setLoading(false); return; }
+
+      setLoading(true);
       const { data, error } = await supa
         .from('prospects')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) setErrorMsg(error.message);
+        .select('id, owner_id, first_name, last_name, phone, email, source, looking, last_step, next_step, due_date, notes, updated_at')
+        .eq('owner_id', me)
+        .order('updated_at', { ascending: false });
+      if (error) console.error(error);
       setRows((data ?? []) as Prospect[]);
       setLoading(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // derived
-  const todayDateOnly = new Date(new Date().toDateString());
-  const valueOptions: string[] | null = useMemo(() => {
-    switch (filter.field) {
-      case 'list': return [...LIST];
-      case 'relationship_status': return [...REL];
-      case 'looking': return [...LOOK];
-      case 'last_step':
-      case 'next_step': return [...STEPS];
-      default: return null;
-    }
-  }, [filter.field]);
+  }, [supa]);
 
   const filtered = useMemo(() => {
-    const toDate = (s?: string|null) => s ? new Date(`${s}T00:00:00`) : null;
-
+    const k = q.trim().toLowerCase();
     return rows.filter(r => {
-      // search
-      const matchQ =
-        !search ||
-        [r.first_name ?? '', r.last_name ?? '', r.phone ?? '', r.email ?? '']
-          .join(' ')
-          .toLowerCase()
-          .includes(search.toLowerCase());
-
-      // field/value
-      let matchField = true;
-      if (filter.value.trim() !== '') {
-        switch (filter.field) {
-          case 'list': matchField = (r.list ?? '') === filter.value; break;
-          case 'relationship_status': matchField = (r.relationship_status ?? 'unknown') === filter.value; break;
-          case 'looking': matchField = (r.looking ?? '') === filter.value; break;
-          case 'last_step': matchField = (r.last_step ?? '') === filter.value; break;
-          case 'next_step': matchField = (r.next_step ?? '') === filter.value; break;
-          case 'location': matchField = (r.location ?? '').toLowerCase().includes(filter.value.toLowerCase()); break;
-          case 'age': matchField = String(r.age ?? '').trim() === filter.value.trim(); break;
-        }
-      }
-
-      // due
-      let matchDue = true;
-      if (due !== 'Any') {
-        const d = toDate(r.due_date);
-        if (!d) matchDue = false;
-        else {
-          const cmp = d.getTime() - todayDateOnly.getTime();
-          if (due === 'Today')   matchDue = cmp === 0;
-          if (due === 'Overdue') matchDue = cmp <  0;
-          if (due === 'Upcoming')matchDue = cmp >  0;
-        }
-      }
-
-      return matchQ && matchField && matchDue;
+      const blob = [r.first_name, r.last_name, r.phone, r.email, r.notes].join(' ').toLowerCase();
+      const okQ = k ? blob.includes(k) : true;
+      const okS = src ? r.source === src : true;
+      return okQ && okS;
     });
-  }, [rows, search, filter, due, todayDateOnly]);
+  }, [rows, q, src]);
 
-  // actions
-  async function remove(id: string) {
+  function toggleAll(v: boolean) {
+    const next: Record<string, boolean> = {};
+    filtered.forEach(r => { next[r.id] = v; });
+    setSel(next);
+  }
+
+  async function saveProspect(p: Partial<Prospect> & { id?: string }) {
+    if (!uid) return;
+    const clean = {
+      owner_id: uid,
+      first_name: p.first_name ?? '',
+      last_name:  p.last_name ?? '',
+      phone:      p.phone ?? '',
+      email:      p.email ?? '',
+      source:     (p.source ?? null) as any,
+      looking:    p.looking ?? null,
+      last_step:  p.last_step ?? null,
+      next_step:  p.next_step ?? null,
+      due_date:   p.due_date ?? null,
+      notes:      p.notes ?? '',
+    };
+    if (p.id) {
+      const { data, error } = await supa.from('prospects').update(clean).eq('id', p.id).select('*').single();
+      if (error) return alert(error.message);
+      setRows(prev => prev.map(r => r.id === p.id ? (data as any) : r));
+    } else {
+      const { data, error } = await supa.from('prospects').insert(clean).select('*').single();
+      if (error) return alert(error.message);
+      setRows(prev => [data as any, ...prev]);
+    }
+    setEditing(null);
+  }
+
+  async function removeProspect(id: string) {
     if (!confirm('Delete this prospect?')) return;
     const { error } = await supa.from('prospects').delete().eq('id', id);
     if (error) return alert(error.message);
     setRows(prev => prev.filter(r => r.id !== id));
   }
 
-  function toggleAll(current: Prospect[]) {
-    setSelected(sel => {
-      const allSelected = current.every(r => sel[r.id]);
-      if (allSelected) {
-        const copy = {...sel};
-        current.forEach(r => delete copy[r.id]);
-        return copy;
-      } else {
-        const copy = {...sel};
-        current.forEach(r => copy[r.id] = true);
-        return copy;
-      }
-    });
+  async function importCSV(rowsIn: ProspectCSVRow[]) {
+    if (!uid) return;
+    if (!rowsIn.length) return;
+    const payload = rowsIn.map(r => ({
+      owner_id: uid,
+      first_name: r.first_name || '',
+      last_name:  r.last_name || '',
+      phone:      r.phone || '',
+      email:      r.email || '',
+      source:     (r.source as any) ?? null,
+      looking:    r.looking || null,
+      last_step:  (r.last_step as Step) || null,
+      next_step:  (r.next_step as Step) || null,
+      due_date:   r.due_date || null,
+      notes:      r.notes || '',
+    }));
+    const { error } = await supa.from('prospects').insert(payload);
+    if (error) return alert(error.message);
+    const { data } = await supa
+      .from('prospects')
+      .select('id, owner_id, first_name, last_name, phone, email, source, looking, last_step, next_step, due_date, notes, updated_at')
+      .eq('owner_id', uid)
+      .order('updated_at', { ascending: false });
+    setRows((data ?? []) as Prospect[]);
+    setImportOpen(false);
   }
 
-  function startSequence() {
-    const ids = Object.keys(selected).filter(k => selected[k]);
-    if (ids.length === 0) {
-      alert('Pick at least one prospect (checkbox).');
-      return;
-    }
-    // Send to outreach runner
-    const qs = new URLSearchParams({ ids: ids.join(',') });
-    window.location.href = `/office/outreach/sequence?${qs.toString()}`;
-  }
+  if (!uid) return <div className="p-6 text-zinc-500">Please sign in.</div>;
+  if (loading) return <div className="p-6 text-zinc-500">Loading…</div>;
 
-  const fmtDate = (s?: string | null) =>
-    s ? new Date(`${s}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  const selectedIds = Object.entries(sel).filter(([_,v])=>v).map(([k])=>k);
 
-  // ---------------- UI -----------------
   return (
-    <div className="px-4 md:px-6 lg:px-8 max-w-[1700px] mx-auto w-full">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 mt-6">
+    <div className="px-4 sm:px-6 lg:px-8 max-w-[1300px] mx-auto w-full">
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
         <h1 className="text-3xl font-semibold tracking-tight">List Builder</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={startSequence}
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900 px-4 py-2 text-sm hover:bg-white"
-            title="Start an outreach run with the selected prospects"
+          <button onClick={()=>setImportOpen(true)} className="glassbtn inline-flex items-center gap-2">
+            <Upload className="h-4 w-4" /> Import CSV
+          </button>
+          <Link
+            href={selectedIds.length ? `/office/outreach/sequence?ids=${selectedIds.join(',')}` : '#'}
+            className={`glassbtn inline-flex items-center gap-2 ${selectedIds.length ? '' : 'pointer-events-none opacity-50'}`}
           >
             <Play className="h-4 w-4" /> Start Sequence
-          </button>
-          <button
-            onClick={() => setEditing({})}
-            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 text-white font-medium px-4 py-2 hover:bg-sky-700"
-          >
-            <Plus className="h-4 w-4" /> Add Prospect
-          </button>
+          </Link>
+          <button onClick={()=>setEditing({} as any)} className="glassbtn-primary">+ Add Prospect</button>
         </div>
       </div>
 
-      {/* Error */}
-      {errorMsg && (
-        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3">
-          {errorMsg}
-        </div>
-      )}
-
-      {/* Filter Bar (tight spacing / labels) */}
-      <div className="mt-4 rounded-2xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-zinc-950/50 px-3 py-3 sm:px-4 sm:py-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[220px_260px_1fr_180px_120px] gap-2 sm:gap-3">
-          {/* Field */}
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Select field</span>
-            <select
-              className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
-              value={filter.field}
-              onChange={(e) => setFilter({ field: e.target.value as FilterField, value: '' })}
-            >
-              <option value="list">List</option>
-              <option value="relationship_status">Relationship status</option>
-              <option value="looking">Looking</option>
-              <option value="last_step">Last step</option>
-              <option value="next_step">Next step</option>
-              <option value="location">Location</option>
-              <option value="age">Age</option>
-            </select>
-          </label>
-
-          {/* Value */}
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Select option</span>
-            {valueOptions ? (
-              <select
-                className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
-                value={filter.value}
-                onChange={(e) => setFilter({ ...filter, value: e.target.value })}
-              >
-                <option value="">— Select —</option>
-                {valueOptions.map(o => <option key={o} value={o}>{o.replace(/_/g,' ')}</option>)}
-              </select>
-            ) : (
-              <input
-                className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
-                placeholder={filter.field === 'age' ? 'Type age…' : 'Type a value…'}
-                value={filter.value}
-                onChange={(e) => setFilter({ ...filter, value: e.target.value })}
-              />
-            )}
-          </label>
-
-          {/* Search */}
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Search (name / phone / email)</span>
-            <input
-              className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
-              placeholder="Start typing…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-
-          {/* Due */}
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Due</span>
-            <select
-              className="h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3"
-              value={due}
-              onChange={(e) => setDue(e.target.value as DueFilter)}
-            >
-              <option>Any</option>
-              <option>Overdue</option>
-              <option>Today</option>
-              <option>Upcoming</option>
-            </select>
-          </label>
-
-          {/* Apply/Reset (kept for affordance) */}
-          <div className="flex items-end gap-2">
-            <button className="h-10 w-full rounded-xl bg-sky-600 text-white px-4 hover:bg-sky-700" onClick={() => { /* filters are reactive */ }}>
-              Apply
-            </button>
-            <button
-              className="h-10 w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4"
-              onClick={() => { setFilter({ field: 'list', value: '' }); setSearch(''); setDue('Any'); }}
-            >
-              Reset
-            </button>
-          </div>
+      {/* Filter bar (liquid glass) */}
+      <div className="mt-4 rounded-[20px] border border-white/60 dark:border-white/10 bg-white/60 dark:bg-white/5 backdrop-blur-xl ring-1 ring-black/5 p-3 sm:p-4">
+        <div className="grid gap-3 md:grid-cols-[200px_1fr_160px_auto_auto] items-center">
+          <select value={src} onChange={e=>setSrc(e.target.value as any)} className="glassfld">
+            <option value="">Source (A/B/C)</option>
+            <option value="A">A-List</option><option value="B">B-List</option><option value="C">C-List</option>
+          </select>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search name / phone / email / notes…" className="glassfld" />
+          <div />
+          <button className="glassbtn-primary">Apply</button>
+          <button onClick={()=>{ setQ(''); setSrc(''); }} className="glassbtn">Reset</button>
         </div>
       </div>
 
       {/* Table */}
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-zinc-950/50">
-        {loading ? (
-          <div className="p-6 text-zinc-500 flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      <div className="mt-4 rounded-[20px] overflow-hidden border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur-xl ring-1 ring-black/5">
+        <div className="grid grid-cols-[42px_1.1fr_.6fr_.8fr_.9fr_.9fr_.9fr_1fr_120px] gap-3 px-3 py-2 text-xs bg-white/60 dark:bg-white/10">
+          <div>
+            <input type="checkbox"
+              checked={filtered.length>0 && filtered.every(r=>sel[r.id])}
+              onChange={(e)=>toggleAll(e.target.checked)}
+            />
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-6 text-zinc-500">No prospects found.</div>
-        ) : (
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-left border-b border-zinc-200/70 dark:border-zinc-800/60">
-                <th className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    onChange={() => toggleAll(filtered)}
-                    checked={filtered.length > 0 && filtered.every(r => selected[r.id])}
-                  />
-                </th>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">List</th>
-                <th className="px-3 py-2">Looking</th>
-                <th className="px-3 py-2">Last Step</th>
-                <th className="px-3 py-2">Next Step</th>
-                <th className="px-3 py-2">Due</th>
-                <th className="px-3 py-2">Phone</th>
-                <th className="px-3 py-2">Email</th>
-                <th className="px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200/70 dark:divide-zinc-800/60">
-              {filtered.map(r => {
-                const fullName = [r.first_name, r.last_name].filter(Boolean).join(' ') || '—';
-                return (
-                  <tr key={r.id} className="align-top">
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={!!selected[r.id]}
-                        onChange={(e) => setSelected(prev => ({ ...prev, [r.id]: e.target.checked }))}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{fullName}</div>
-                      <div className="text-xs text-zinc-500">
-                        {r.location || ''} {r.relationship_status ? `• ${r.relationship_status.replace(/_/g, ' ')}` : ''}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">{r.list ?? '—'}</td>
-                    <td className="px-3 py-2">{r.looking ?? '—'}</td>
-                    <td className="px-3 py-2">
-                      <div>{r.last_step ?? '—'}</div>
-                      <div className="text-xs text-zinc-500">{fmtDate(r.last_step_date)}</div>
-                    </td>
-                    <td className="px-3 py-2">{r.next_step ?? '—'}</td>
-                    <td className="px-3 py-2">{fmtDate(r.due_date)}</td>
-                    <td className="px-3 py-2">{r.phone ? <a className="hover:underline" href={`tel:${r.phone}`}>{r.phone}</a> : '—'}</td>
-                    <td className="px-3 py-2">{r.email ? <a className="hover:underline" href={`mailto:${r.email}`}>{r.email}</a> : '—'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <button
-                          title="Edit"
-                          onClick={() => setEditing(r)}
-                          className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          title="Delete"
-                          onClick={() => remove(r.id)}
-                          className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 hover:bg-red-100"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+          <div>Name</div><div>Source</div><div>Looking</div>
+          <div>Last Step</div><div>Next Step</div><div>Due</div>
+          <div>Contact</div><div>Actions</div>
+        </div>
+
+        {filtered.map(r => (
+          <div key={r.id} className="grid grid-cols-[42px_1.1fr_.6fr_.8fr_.9fr_.9fr_.9fr_1fr_120px] gap-3 items-center px-3 py-2 border-t border-white/40 dark:border-white/10">
+            <div><input type="checkbox" checked={!!sel[r.id]} onChange={(e)=>setSel(prev=>({ ...prev, [r.id]: e.target.checked }))}/></div>
+            <div className="truncate">
+              <div className="font-medium">{[r.first_name, r.last_name].filter(Boolean).join(' ') || '—'}</div>
+            </div>
+            <div>{r.source || '—'}</div>
+            <div className="capitalize">{r.looking || '—'}</div>
+            <div className="truncate">{r.last_step || '—'}</div>
+            <div className="truncate">{r.next_step || '—'}</div>
+            <div className="truncate">{r.due_date || '—'}</div>
+            <div className="truncate">
+              {r.phone ? <a className="underline" href={`tel:${r.phone}`}>{r.phone}</a> : '—'}
+              {r.email ? <span> · <a className="underline" href={`mailto:${r.email}`}>{r.email}</a></span> : ''}
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="icobtn" title="Edit" onClick={()=>setEditing(r)}><Pencil className="h-4 w-4" /></button>
+              <button className="icobtn danger" title="Delete" onClick={()=>removeProspect(r.id)}><Trash2 className="h-4 w-4" /></button>
+            </div>
+          </div>
+        ))}
+
+        {filtered.length === 0 && <div className="p-6 text-zinc-500">No matches.</div>}
       </div>
 
-      {/* Add/Edit modal */}
-      {editing && (
-        <ProspectModal
-          value={editing as Prospect | { id?: string }}
-          onClose={() => setEditing(null)}
-          onSaved={(saved) => {
-            setEditing(null);
-            setRows(prev => {
-              const i = prev.findIndex(p => p.id === saved.id);
-              if (i === -1) return [saved, ...prev];
-              const copy = [...prev]; copy[i] = saved; return copy;
-            });
-          }}
-        />
-      )}
+      {/* Editor */}
+      {editing && <EditModal value={editing} onClose={()=>setEditing(null)} onSave={saveProspect} />}
+
+      {/* Importer */}
+      {importOpen && <ImportCSVModal onClose={()=>setImportOpen(false)} onImport={importCSV} />}
+
+      {/* Glass utilities for consistent finish */}
+      <style jsx global>{`
+        .glassbtn {
+          @apply rounded-xl px-4 py-2 border border-white/60 dark:border-white/10 bg-white/50 dark:bg-white/10 backdrop-blur shadow-sm ring-1 ring-black/5 hover:bg-white/70 transition;
+        }
+        .glassbtn-primary {
+          @apply rounded-xl px-4 py-2 bg-sky-600 text-white shadow-[0_6px_18px_rgba(2,132,199,0.35)] hover:bg-sky-700 transition;
+        }
+        .glassfld {
+          @apply h-11 w-full rounded-xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/10 px-3 backdrop-blur focus:outline-none focus:ring-2 focus:ring-sky-400/60;
+        }
+        .icobtn {
+          @apply grid place-items-center h-9 w-9 rounded-xl border border-white/60 dark:border-white/10 bg-white/60 dark:bg-white/10 backdrop-blur hover:bg-white/80 ring-1 ring-black/5;
+        }
+        .icobtn.danger { @apply border-red-200/60 bg-red-50/60 text-red-700 hover:bg-red-100; }
+      `}</style>
     </div>
   );
 }
 
-// ---------------- Modal (inline helper) ----------------
-function ProspectModal({
-  value,
-  onClose,
-  onSaved
-}: {
+/* ---------- Edit Modal ---------- */
+function EditModal({ value, onClose, onSave }: {
   value: Partial<Prospect>;
   onClose: () => void;
-  onSaved: (row: Prospect) => void;
+  onSave: (v: Partial<Prospect> & { id?: string }) => void;
 }) {
-  const supa = supabaseBrowser();
-  const isEdit = !!value.id;
-
   const [draft, setDraft] = useState<Partial<Prospect>>({
     id: value.id,
     first_name: value.first_name ?? '',
-    last_name: value.last_name ?? '',
-    phone: value.phone ?? '',
-    email: value.email ?? '',
-    list: value.list ?? null,
-    relationship_status: value.relationship_status ?? 'unknown',
-    looking: value.looking ?? 'pending',
-    last_step: value.last_step ?? '',
-    last_step_date: value.last_step_date ?? '',
-    next_step: value.next_step ?? '',
-    due_date: value.due_date ?? '',
-    location: value.location ?? '',
-    how_known: value.how_known ?? '',
-    age: value.age ?? null,
-    notes: value.notes ?? '',
+    last_name:  value.last_name ?? '',
+    phone:      value.phone ?? '',
+    email:      value.email ?? '',
+    source:     value.source ?? null,
+    looking:    value.looking ?? 'pending',
+    last_step:  value.last_step ?? null,
+    next_step:  value.next_step ?? null,
+    due_date:   value.due_date ?? null,
+    notes:      value.notes ?? '',
   });
-  const [busy, setBusy] = useState(false);
-
-  async function save() {
-    setBusy(true);
-    const payload = {
-      first_name: draft.first_name || '',
-      last_name: draft.last_name || '',
-      phone: (draft.phone || '') as string,
-      email: (draft.email || '') as string,
-      list: (draft.list ?? null) as any,
-      relationship_status: (draft.relationship_status ?? 'unknown') as any,
-      looking: (draft.looking ?? 'pending') as any,
-      last_step: draft.last_step || null,
-      last_step_date: draft.last_step_date || null,
-      next_step: draft.next_step || null,
-      due_date: draft.due_date || null,
-      location: draft.location || null,
-      how_known: draft.how_known || null,
-      age: draft.age ?? null,
-      notes: draft.notes || null,
-    };
-
-    if (isEdit) {
-      const { data, error } = await supa.from('prospects').update(payload).eq('id', draft.id).select('*').single();
-      setBusy(false);
-      if (error) return alert(error.message);
-      onSaved(data as Prospect);
-    } else {
-      const { data, error } = await supa.from('prospects').insert(payload).select('*').single();
-      setBusy(false);
-      if (error) return alert(error.message);
-      onSaved(data as Prospect);
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-[500] grid place-items-center p-4">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6">
-        <h2 className="text-lg font-semibold">{isEdit ? 'Edit Prospect' : 'Add Prospect'}</h2>
+      <div className="relative w-full max-w-3xl rounded-[22px] border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/10 backdrop-blur-xl ring-1 ring-black/5 p-5 sm:p-6">
+        <h3 className="text-lg font-semibold">{draft.id ? 'Edit Prospect' : 'Add Prospect'}</h3>
 
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Text label="First name" value={draft.first_name as string} onChange={v => setDraft(d => ({...d, first_name: v}))}/>
-          <Text label="Last name"  value={draft.last_name  as string} onChange={v => setDraft(d => ({...d, last_name: v}))}/>
-          <Text label="Phone"      value={draft.phone      as string} onChange={v => setDraft(d => ({...d, phone: v}))}/>
-          <Text label="Email"      value={draft.email      as string} onChange={v => setDraft(d => ({...d, email: v}))}/>
-          <Select label="List" value={(draft.list ?? '') as any} onChange={v => setDraft(d => ({...d, list: v as any}))} options={['','A','B','C']} />
-          <Select label="Relationship" value={(draft.relationship_status ?? 'unknown') as any} onChange={v => setDraft(d => ({...d, relationship_status: v as any}))} options={['unknown',...REL]} />
-          <Select label="Looking" value={(draft.looking ?? 'pending') as any} onChange={v => setDraft(d => ({...d, looking: v as any}))} options={LOOK as unknown as string[]} />
-          <Text label="Location"   value={draft.location   as string} onChange={v => setDraft(d => ({...d, location: v}))}/>
-          <Text label="How do you know?" value={draft.how_known as string} onChange={v => setDraft(d => ({...d, how_known: v}))}/>
-          <Text label="Age" type="number" value={String(draft.age ?? '')} onChange={v => setDraft(d => ({...d, age: v ? parseInt(v,10) : null}))}/>
-          <Text label="Last step" value={draft.last_step as string} onChange={v => setDraft(d => ({...d, last_step: v}))}/>
-          <DateField label="Last step date" value={draft.last_step_date as string} onChange={v => setDraft(d => ({...d, last_step_date: v}))}/>
-          <Text label="Next step" value={draft.next_step as string} onChange={v => setDraft(d => ({...d, next_step: v}))}/>
-          <DateField label="Due date" value={draft.due_date as string} onChange={v => setDraft(d => ({...d, due_date: v}))}/>
-          <Area label="Notes" className="sm:col-span-2" value={draft.notes as string} onChange={v => setDraft(d => ({...d, notes: v}))}/>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="First name"><input className="glassfld" value={draft.first_name as any} onChange={e=>setDraft(d=>({ ...d, first_name: e.target.value }))}/></Field>
+          <Field label="Last name"><input className="glassfld" value={draft.last_name as any} onChange={e=>setDraft(d=>({ ...d, last_name: e.target.value }))}/></Field>
+          <Field label="Phone"><input className="glassfld" value={draft.phone as any} onChange={e=>setDraft(d=>({ ...d, phone: e.target.value }))}/></Field>
+          <Field label="Email"><input className="glassfld" value={draft.email as any} onChange={e=>setDraft(d=>({ ...d, email: e.target.value }))}/></Field>
+
+          <Field label="Source (A/B/C)">
+            <select className="glassfld" value={draft.source ?? ''} onChange={e=>setDraft(d=>({ ...d, source: (e.target.value || null) as any }))}>
+              <option value="">—</option><option value="A">A-List</option><option value="B">B-List</option><option value="C">C-List</option>
+            </select>
+          </Field>
+
+          <Field label="Looking">
+            <select className="glassfld" value={draft.looking ?? 'pending'} onChange={e=>setDraft(d=>({ ...d, looking: e.target.value }))}>
+              {['pending','looker','non-looker','learner','no one’s home','curious'].map(x => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </Field>
+
+          <Field label="Last Step">
+            <select className="glassfld" value={draft.last_step ?? ''} onChange={e=>setDraft(d=>({ ...d, last_step: (e.target.value || null) as any }))}>
+              <option value="">—</option>{STEPS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+
+          <Field label="Next Step">
+            <select className="glassfld" value={draft.next_step ?? ''} onChange={e=>setDraft(d=>({ ...d, next_step: (e.target.value || null) as any }))}>
+              <option value="">—</option>{STEPS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+
+          <Field label="Due date"><input type="date" className="glassfld" value={draft.due_date ?? ''} onChange={e=>setDraft(d=>({ ...d, due_date: e.target.value || null }))}/></Field>
+
+          <div className="sm:col-span-2">
+            <Field label="Notes"><textarea rows={4} className="glassfld" value={draft.notes as any} onChange={e=>setDraft(d=>({ ...d, notes: e.target.value }))}/></Field>
+          </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button onClick={onClose} className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2">Cancel</button>
-          <button onClick={save} disabled={busy} className="rounded-xl bg-sky-600 text-white px-4 py-2 hover:bg-sky-700 disabled:opacity-60">
-            {busy ? 'Saving…' : 'Save'}
-          </button>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="glassbtn">Cancel</button>
+          <button onClick={()=>onSave(draft)} className="glassbtn-primary">{draft.id ? 'Save' : 'Add to List'}</button>
         </div>
       </div>
     </div>
   );
 }
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="text-sm text-zinc-700 dark:text-zinc-300 grid gap-1">
+      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">{label}</span>
+      {children}
+    </label>
+  );
+}
 
-// ---------- tiny form helpers ----------
-function Text({ label, value, onChange, type='text', className='' }: { label: string; value: string; onChange:(v:string)=>void; type?:string; className?:string }) {
+/* ---------- CSV Import ---------- */
+type ProspectCSVRow = {
+  first_name?: string; last_name?: string; phone?: string; email?: string;
+  source?: 'A'|'B'|'C'; looking?: string; last_step?: string; next_step?: string;
+  due_date?: string; notes?: string;
+};
+
+function ImportCSVModal({ onClose, onImport }: {
+  onClose: () => void;
+  onImport: (rows: ProspectCSVRow[]) => void;
+}) {
+  const [rows, setRows] = useState<ProspectCSVRow[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function handleFile(file: File) {
+    try {
+      setErr(null);
+      const text = await file.text();
+      const [head, ...lines] = text.split(/\r?\n/).filter(Boolean);
+      const cols = head.split(',').map(c => c.trim().toLowerCase());
+      const out: ProspectCSVRow[] = lines.map(line => {
+        const cells = line.split(',');
+        const rec: any = {};
+        cols.forEach((c, i) => rec[c] = (cells[i] ?? '').trim());
+        return rec;
+      });
+      setRows(out.slice(0, 2000));
+    } catch (e: any) {
+      setErr(e?.message || 'Could not parse CSV.');
+    }
+  }
+
   return (
-    <label className={`flex flex-col gap-1 ${className}`}>
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">{label}</span>
-      <input type={type} className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" value={value} onChange={e=>onChange(e.target.value)} />
-    </label>
-  );
-}
-function Area({ label, value, onChange, className='' }: { label:string; value:string; onChange:(v:string)=>void; className?:string }) {
-  return (
-    <label className={`flex flex-col gap-1 ${className}`}>
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">{label}</span>
-      <textarea rows={3} className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" value={value} onChange={e=>onChange(e.target.value)} />
-    </label>
-  );
-}
-function Select({ label, value, onChange, options, className='' }: { label:string; value:string; onChange:(v:string)=>void; options:string[]; className?:string }) {
-  return (
-    <label className={`flex flex-col gap-1 ${className}`}>
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">{label}</span>
-      <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" value={value} onChange={e=>onChange(e.target.value)}>
-        {options.map(o => <option key={o} value={o}>{o || '—'}</option>)}
-      </select>
-    </label>
-  );
-}
-function DateField({ label, value, onChange, className='' }: { label:string; value:string; onChange:(v:string)=>void; className?:string }) {
-  return (
-    <label className={`flex flex-col gap-1 ${className}`}>
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">{label}</span>
-      <input type="date" className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2" value={value || ''} onChange={e=>onChange(e.target.value)} />
-    </label>
+    <div className="fixed inset-0 z-[510] grid place-items-center p-4">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative w-full max-w-3xl rounded-[22px] border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/10 backdrop-blur-xl ring-1 ring-black/5 p-5 sm:p-6">
+        <h3 className="text-lg font-semibold">Import Contacts (CSV)</h3>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          Columns: <code>first_name,last_name,phone,email,source(A/B/C),looking,last_step,next_step,due_date,notes</code>
+        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <input type="file" accept=".csv,text/csv" onChange={(e)=>{ const f = e.target.files?.[0]; if (f) void handleFile(f); }} />
+          <button disabled={!rows.length} onClick={()=>onImport(rows)} className="glassbtn-primary">
+            Import {rows.length ? `(${rows.length})` : ''}
+          </button>
+          <button onClick={onClose} className="glassbtn">Close</button>
+        </div>
+        {!!err && <div className="mt-2 text-red-600 text-sm">{err}</div>}
+      </div>
+    </div>
   );
 }
